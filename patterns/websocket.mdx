@@ -1,0 +1,224 @@
+---
+title: "WebSockets: real-time bidirectional communication"
+description: "Set up persistent WebSocket connections in Elysia with typed message validation, open/close lifecycle hooks, and Bun's uWebSockets engine under the hood."
+---
+
+WebSocket establishes a persistent, full-duplex channel between your client and server. Unlike HTTP, where the client must initiate every exchange, WebSocket lets either side send messages at any time — making it ideal for chat, live updates, and collaborative tools.
+
+Elysia uses [uWebSockets](https://github.com/uNetworking/uWebSockets), the same engine Bun uses internally, so you get native performance with a familiar API.
+
+## Basic setup
+
+Call `.ws()` with a path and a handler object. The `message` callback receives the connected socket and the incoming message.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .ws('/ws', {
+        message(ws, message) {
+            ws.send(message)
+        }
+    })
+    .listen(3000)
+```
+
+## Message validation
+
+Pass a `body` schema to validate incoming messages and a `query` schema for URL parameters. Validated data is available on `ws.data`.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .ws('/ws', {
+        body: t.Object({
+            message: t.String()
+        }),
+        query: t.Object({
+            id: t.String()
+        }),
+        message(ws, { message }) {
+            const { id } = ws.data.query
+            ws.send({
+                id,
+                message,
+                time: Date.now()
+            })
+        }
+    })
+    .listen(3000)
+```
+
+WebSocket schemas can validate the following fields:
+
+| Field      | Description                            |
+| ---------- | -------------------------------------- |
+| `message`  | Incoming WebSocket message payload     |
+| `query`    | URL query string parameters            |
+| `params`   | Path parameters                        |
+| `header`   | Request headers at upgrade time        |
+| `cookie`   | Request cookies at upgrade time        |
+| `response` | Value returned from a message handler  |
+
+Elysia parses stringified JSON messages into objects automatically before validation runs.
+
+## Lifecycle handlers
+
+Use `open`, `message`, `close`, and `drain` to respond to connection events.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .ws('/ws', {
+        open(ws) {
+            console.log(`Connected: ${ws.id}`)
+        },
+        message(ws, message) {
+            ws.send(message)
+        },
+        close(ws) {
+            console.log(`Disconnected: ${ws.id}`)
+        },
+        drain(ws) {
+            console.log('Ready to send more data')
+        }
+    })
+    .listen(3000)
+```
+
+Each handler receives a `ServerWebSocket` with a unique `id` string and a `data` property containing the typed request context.
+
+## Middleware hooks
+
+The following standard Elysia middleware hooks run during the HTTP upgrade phase, before the connection is established:
+
+- **`parse`** — parse the request body
+- **`transform`** — transform context before validation
+- **`beforeHandle`** — validate or authorize the upgrade request
+- **`transformMessage`** — transform the WebSocket message before validation
+
+Use `beforeHandle` to reject unauthorized connections before they upgrade:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .ws('/ws', {
+        beforeHandle({ headers, error }) {
+            if (!headers.authorization) {
+                return error(401, 'Unauthorized')
+            }
+        },
+        message(ws, message) {
+            ws.send(message)
+        }
+    })
+    .listen(3000)
+```
+
+## Configuration
+
+Pass a `websocket` object to the Elysia constructor to configure server-wide WebSocket behavior. These options extend [Bun's WebSocket configuration](https://bun.sh/docs/api/websockets).
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia({
+    websocket: {
+        idleTimeout: 30
+    }
+})
+```
+
+<Tabs>
+  <Tab title="perMessageDeflate">
+    Enable per-message compression for clients that support it. Disabled by default.
+
+    ```typescript
+    new Elysia({
+        websocket: { perMessageDeflate: true }
+    })
+    ```
+  </Tab>
+  <Tab title="maxPayloadLength">
+    Set the maximum accepted message size in bytes.
+
+    ```typescript
+    new Elysia({
+        websocket: { maxPayloadLength: 64 * 1024 }
+    })
+    ```
+  </Tab>
+  <Tab title="idleTimeout">
+    Close connections that have been silent for this many seconds. Defaults to `120`.
+
+    ```typescript
+    new Elysia({
+        websocket: { idleTimeout: 60 }
+    })
+    ```
+  </Tab>
+  <Tab title="backpressureLimit">
+    Maximum bytes that can be buffered per connection before backpressure is applied. Defaults to `16777216` (16 MB).
+
+    ```typescript
+    new Elysia({
+        websocket: { backpressureLimit: 8 * 1024 * 1024 }
+    })
+    ```
+  </Tab>
+  <Tab title="closeOnBackpressureLimit">
+    Automatically close the connection when the backpressure limit is reached. Defaults to `false`.
+
+    ```typescript
+    new Elysia({
+        websocket: { closeOnBackpressureLimit: true }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Handler type signatures
+
+<AccordionGroup>
+  <Accordion title="ws(endpoint, options)">
+    ```typescript
+    .ws(endpoint: path, options: Partial<WebSocketHandler<Context>>): this
+    ```
+    - `endpoint` — the URL path to expose as a WebSocket handler
+    - `options` — handler callbacks and schema configuration
+  </Accordion>
+  <Accordion title="open(ws)">
+    ```typescript
+    open(ws: ServerWebSocket<{ id: string; data: Context }>): this
+    ```
+    Called when a new client connects.
+  </Accordion>
+  <Accordion title="message(ws, message)">
+    ```typescript
+    message(
+        ws: ServerWebSocket<{ id: string; data: Context }>,
+        message: Message
+    ): this
+    ```
+    Called for each incoming message. `Message` type is derived from `schema.body`.
+  </Accordion>
+  <Accordion title="close(ws)">
+    ```typescript
+    close(ws: ServerWebSocket<{ id: string; data: Context }>): this
+    ```
+    Called when a connection closes.
+  </Accordion>
+  <Accordion title="drain(ws, code, reason)">
+    ```typescript
+    drain(
+        ws: ServerWebSocket<{ id: string; data: Context }>,
+        code: number,
+        reason: string
+    ): this
+    ```
+    Called when the server is ready to accept more data after backpressure.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,183 @@
+---
+title: "OpenAPI: auto-generate API docs from TypeScript types"
+description: "Generate interactive OpenAPI documentation from Elysia routes and TypeBox schemas. Serves Scalar or Swagger UI at a configurable endpoint automatically."
+---
+
+The `@elysia/openapi` plugin automatically generates an OpenAPI specification from your Elysia route definitions and TypeBox schemas. By default it serves an interactive Scalar UI at `/openapi` and the raw JSON spec at `/openapi/json`.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/openapi
+```
+
+```bash npm
+npm install @elysia/openapi
+```
+
+```bash pnpm
+pnpm add @elysia/openapi
+```
+
+```bash yarn
+yarn add @elysia/openapi
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { openapi } from '@elysia/openapi'
+
+new Elysia()
+    .use(openapi())
+    .get('/', () => 'hello')
+    .post('/hello', () => 'OpenAPI')
+    .listen(3000)
+```
+
+Visiting `/openapi` shows the Scalar UI with generated documentation for every registered endpoint. The raw OpenAPI specification is available at `/openapi/json`.
+
+## Route detail
+
+Each route accepts a `detail` field that extends the [OpenAPI Operation Object](https://spec.openapis.org/oas/v3.0.3.html#operation-object). Use it to add descriptions, summaries, tags, and deprecation markers visible in the documentation UI.
+
+### Hiding a route
+
+Set `detail.hide` to `true` to exclude a route from the documentation:
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { openapi } from '@elysia/openapi'
+
+new Elysia().use(openapi()).post('/sign-in', ({ body }) => body, {
+    body: t.Object({
+        username: t.String(),
+        password: t.String()
+    }),
+    detail: {
+        hide: true
+    }
+})
+```
+
+### Other detail fields
+
+| Field | Description |
+|-------|-------------|
+| `summary` | Short summary shown in the endpoint list |
+| `description` | Verbose explanation of the operation |
+| `deprecated` | Mark the operation as deprecated (`false` by default) |
+| `tags` | Group endpoints under named tags |
+
+## Configuration
+
+### `path`
+
+**Default:** `'/openapi'`
+
+The URL where the documentation UI is served.
+
+### `provider`
+
+**Default:** `'scalar'`
+
+Choose the documentation frontend:
+
+- `'scalar'` — [Scalar](https://github.com/scalar/scalar) (default)
+- `'swagger-ui'` — [Swagger UI](https://github.com/swagger-api/swagger-ui)
+- `null` — disable the frontend; only the JSON spec endpoint is registered
+
+### `specPath`
+
+**Default:** `'/${path}/json'`
+
+The URL where the raw OpenAPI JSON specification is exposed.
+
+### `documentation`
+
+Provide static OpenAPI documentation metadata such as `info`, `servers`, and `tags`. Accepts the full [OpenAPI Object](https://spec.openapis.org/oas/v3.0.3.html).
+
+```typescript
+import { Elysia } from 'elysia'
+import { openapi } from '@elysia/openapi'
+
+new Elysia()
+    .use(
+        openapi({
+            documentation: {
+                info: {
+                    title: 'My API',
+                    version: '1.0.0',
+                    description: 'API documentation'
+                }
+            }
+        })
+    )
+    .listen(3000)
+```
+
+### `exclude`
+
+Exclude specific paths, methods, or tags from documentation:
+
+```typescript
+openapi({
+    exclude: {
+        paths: ['/internal'],
+        methods: ['OPTIONS'],
+        tags: ['admin'],
+        staticFile: true  // default: true
+    }
+})
+```
+
+### `scalar`
+
+Pass configuration directly to the Scalar UI. Refer to the [Scalar configuration docs](https://github.com/scalar/scalar/blob/main/documentation/configuration.md) for all available options.
+
+#### Self-hosting the Scalar bundle
+
+To serve the Scalar JS bundle from your own server instead of a CDN:
+
+```typescript
+openapi({
+    scalar: {
+        cdn: '/public/scalar-standalone.min.js',
+        withDefaultFonts: false
+    }
+})
+```
+
+### `swagger`
+
+Pass configuration to the Swagger UI frontend. See the [Swagger UI configuration docs](https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/) for details.
+
+### `mapJsonSchema`
+
+Provide a custom function to map a third-party validation schema (such as Valibot) to a standard JSON Schema for the OpenAPI spec:
+
+```typescript
+import { openapi } from '@elysia/openapi'
+import { toJsonSchema } from '@valibot/to-json-schema'
+
+openapi({
+    mapJsonSchema: {
+        valibot: toJsonSchema
+    }
+})
+```
+
+### `enabled`
+
+**Default:** `true`
+
+Set to `false` to disable the plugin entirely without removing the `.use()` call, useful for conditional environments.
+
+<Tip>
+  For common patterns and advanced usage — such as adding authentication to the docs endpoint or grouping routes with tags — combine `openapi()` with Elysia's macro and lifecycle hooks.
+</Tip>

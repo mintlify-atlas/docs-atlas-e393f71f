@@ -1,0 +1,169 @@
+---
+title: "Cron plugin: schedule recurring tasks in Elysia"
+description: "Schedule background jobs with cron expressions in your Elysia server. Access and stop running jobs from route handlers via the store. Powered by croner."
+---
+
+The `@elysia/cron` plugin adds support for running scheduled background jobs inside your Elysia server. Jobs are defined with standard cron expressions and registered in the server store, making them accessible from route handlers.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/cron
+```
+
+```bash npm
+npm install @elysia/cron
+```
+
+```bash pnpm
+pnpm add @elysia/cron
+```
+
+```bash yarn
+yarn add @elysia/cron
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { cron } from '@elysia/cron'
+
+new Elysia()
+    .use(
+        cron({
+            name: 'heartbeat',
+            pattern: '*/10 * * * * *',
+            run() {
+                console.log('Heartbeat')
+            }
+        })
+    )
+    .listen(3000)
+```
+
+This logs `Heartbeat` every 10 seconds.
+
+## Cron expression syntax
+
+The `pattern` field accepts a standard cron expression with an optional leading seconds field:
+
+```
+┌────────────── second (optional)
+│ ┌──────────── minute
+│ │ ┌────────── hour
+│ │ │ ┌──────── day of the month
+│ │ │ │ ┌────── month
+│ │ │ │ │ ┌──── day of week
+│ │ │ │ │ │
+* * * * * *
+```
+
+Use [Crontab Guru](https://crontab.guru/) to build and test expressions.
+
+## Configuration
+
+### `name`
+
+The key under which the job instance is registered in `store.cron`. Use this name to reference or stop the job from a route handler.
+
+### `pattern`
+
+The cron schedule expression. Supports the standard five-field format plus an optional leading seconds field.
+
+### `run`
+
+The function to execute on each tick. Receives no arguments by default.
+
+### Additional options (from croner)
+
+| Option | Description |
+|--------|-------------|
+| `timezone` | Timezone in `Europe/Stockholm` format |
+| `startAt` | Schedule start time |
+| `stopAt` | Schedule stop time |
+| `maxRuns` | Maximum number of executions |
+| `catch` | Continue running even after an unhandled error |
+| `interval` | Minimum seconds between executions |
+
+## Stopping a job from a route
+
+Because each job is stored in `store.cron` under its `name`, you can stop it from any route handler:
+
+```typescript
+import { Elysia } from 'elysia'
+import { cron } from '@elysia/cron'
+
+const app = new Elysia()
+    .use(
+        cron({
+            name: 'heartbeat',
+            pattern: '*/1 * * * * *',
+            run() {
+                console.log('Heartbeat')
+            }
+        })
+    )
+    .get(
+        '/stop',
+        ({
+            store: {
+                cron: { heartbeat }
+            }
+        }) => {
+            heartbeat.stop()
+            return 'Stop heartbeat'
+        }
+    )
+    .listen(3000)
+```
+
+## Predefined patterns
+
+Import `Patterns` from `@elysia/cron` to use readable pattern helpers instead of raw cron strings:
+
+```typescript
+import { Elysia } from 'elysia'
+import { cron, Patterns } from '@elysia/cron'
+
+const app = new Elysia()
+    .use(
+        cron({
+            name: 'heartbeat',
+            pattern: Patterns.everySecond(),
+            run() {
+                console.log('Heartbeat')
+            }
+        })
+    )
+    .listen(3000)
+```
+
+### Pattern helpers
+
+| Function | Description |
+|----------|-------------|
+| `Patterns.everySeconds(2)` | Every 2 seconds |
+| `Patterns.everyMinutes(5)` | Every 5 minutes |
+| `Patterns.everyHours(3)` | Every 3 hours |
+| `Patterns.everyHoursAt(3, 15)` | Every 3 hours at minute 15 |
+| `Patterns.everyDayAt('04:19')` | Every day at 04:19 |
+| `Patterns.everyWeekOn(Patterns.MONDAY, '19:30')` | Every Monday at 19:30 |
+| `Patterns.everyWeekdayAt('17:00')` | Monday–Friday at 17:00 |
+| `Patterns.everyWeekendAt('11:00')` | Saturday and Sunday at 11:00 |
+
+### Convenience aliases
+
+| Function | Equivalent constant |
+|----------|-------------------|
+| `Patterns.everySecond()` | `EVERY_SECOND` |
+| `Patterns.everyMinute()` | `EVERY_MINUTE` |
+| `Patterns.hourly()` | `EVERY_HOUR` |
+| `Patterns.daily()` | `EVERY_DAY_AT_MIDNIGHT` |
+| `Patterns.weekly()` | `EVERY_WEEK` |
+| `Patterns.monthly()` | `EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT` |
+| `Patterns.yearly()` | `EVERY_YEAR` |

@@ -1,0 +1,371 @@
+---
+title: "Quick Start: run Elysia on Bun or Node.js"
+description: "Install Elysia and get a running server in minutes. Covers Bun auto and manual setup, Node.js with TypeScript or JavaScript, and Web Standard runtimes."
+---
+
+Elysia is a TypeScript backend framework with support for multiple runtimes, optimized for Bun. The steps below walk you through getting a running server regardless of which runtime you are targeting.
+
+<Tabs>
+  <Tab title="Bun">
+
+## Install Bun
+
+Elysia is optimized for Bun, a fast JavaScript runtime designed as a drop-in replacement for Node.js.
+
+<CodeGroup>
+
+```bash macOS / Linux
+curl -fsSL https://bun.sh/install | bash
+```
+
+```bash Windows
+powershell -c "irm bun.sh/install.ps1 | iex"
+```
+
+</CodeGroup>
+
+<Tabs>
+  <Tab title="Auto installation">
+
+## Create a project
+
+The fastest way to start is with `bun create elysia`, which scaffolds a project with sensible defaults:
+
+<Steps>
+  <Step title="Scaffold the project">
+    ```bash
+    bun create elysia app
+    ```
+
+    This creates an `app` folder with Elysia installed and a starter `src/index.ts`.
+  </Step>
+  <Step title="Enter the project directory">
+    ```bash
+    cd app
+    ```
+  </Step>
+  <Step title="Start the development server">
+    ```bash
+    bun dev
+    ```
+
+    Navigate to [http://localhost:3000](http://localhost:3000). You should see `Hello Elysia`.
+
+    <Tip>
+      The `dev` command uses Bun's `--watch` flag to reload the server automatically on file changes.
+    </Tip>
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Manual installation">
+
+## Manual setup
+
+If you prefer to set up a project from scratch, install Elysia and Bun type definitions:
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    bun add elysia
+    bun add -d @types/bun
+    ```
+  </Step>
+  <Step title="Create the entry point">
+    Create `src/index.ts` with the following content:
+
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    const app = new Elysia()
+      .get('/', () => 'Hello Elysia')
+      .listen(3000)
+
+    console.log(
+      `Elysia is running at ${app.server?.hostname}:${app.server?.port}`
+    )
+    ```
+  </Step>
+  <Step title="Add scripts to package.json">
+    ```json
+    {
+      "scripts": {
+        "dev": "bun --watch src/index.ts",
+        "build": "bun build src/index.ts --target bun --outdir ./dist",
+        "start": "NODE_ENV=production bun dist/index.js",
+        "test": "bun test"
+      }
+    }
+    ```
+
+    - **dev** — runs with hot reload during development
+    - **build** — compiles for production
+    - **start** — runs the compiled output
+  </Step>
+  <Step title="Configure TypeScript">
+    Create `tsconfig.json` or add the following to an existing one. Strict mode is required for Elysia's type inference to work correctly:
+
+    ```json
+    {
+      "compilerOptions": {
+        "strict": true
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+  </Tab>
+  <Tab title="Node.js">
+
+## Install Node.js
+
+<CodeGroup>
+
+```bash macOS (Homebrew)
+brew install node
+```
+
+```bash Windows (Chocolatey)
+choco install nodejs
+```
+
+```bash apt (Debian / Ubuntu)
+sudo apt install nodejs
+```
+
+```bash pacman (Arch Linux)
+pacman -S nodejs npm
+```
+
+</CodeGroup>
+
+We recommend using TypeScript. Select the tab that matches your preference:
+
+<Tabs>
+  <Tab title="TypeScript">
+
+<Steps>
+  <Step title="Install dependencies">
+    Elysia on Node.js requires the `@elysia/node` adapter. Install Elysia, the adapter, and TypeScript tooling:
+
+    <CodeGroup>
+
+    ```bash bun
+    bun add elysia @elysia/node && \
+    bun add -d tsx @types/node typescript
+    ```
+
+    ```bash pnpm
+    pnpm add elysia @elysia/node @sinclair/typebox openapi-types && \
+    pnpm add -D tsx @types/node typescript
+    ```
+
+    ```bash npm
+    npm install elysia @elysia/node && \
+    npm install --save-dev tsx @types/node typescript
+    ```
+
+    ```bash yarn
+    yarn add elysia @elysia/node && \
+    yarn add -D tsx @types/node typescript
+    ```
+
+    </CodeGroup>
+
+    `tsx` is a TypeScript runner with hot reload and modern dev tooling built in.
+  </Step>
+  <Step title="Create the entry point">
+    Create `src/index.ts`:
+
+    ```typescript
+    import { Elysia } from 'elysia'
+    import { node } from '@elysia/node'
+
+    const app = new Elysia({ adapter: node() })
+      .get('/', () => 'Hello Elysia')
+      .listen(3000, ({ hostname, port }) => {
+        console.log(`Elysia is running at ${hostname}:${port}`)
+      })
+    ```
+  </Step>
+  <Step title="Add scripts to package.json">
+    ```json
+    {
+      "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "build": "tsc src/index.ts --outDir dist",
+        "start": "NODE_ENV=production node dist/index.js"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Initialize TypeScript">
+    ```bash
+    npx tsc --init
+    ```
+
+    Then update `tsconfig.json` to enable strict mode:
+
+    ```json
+    {
+      "compilerOptions": {
+        "strict": true
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="JavaScript">
+
+<Warning>
+  Using Elysia without TypeScript means you will miss out on automatic type inference, autocomplete, end-to-end type safety with Eden, and advanced compile-time checks — all of which are core features of the framework.
+</Warning>
+
+<Steps>
+  <Step title="Install dependencies">
+    <CodeGroup>
+
+    ```bash bun
+    bun add elysia @elysia/node
+    ```
+
+    ```bash pnpm
+    pnpm add elysia @elysia/node @sinclair/typebox openapi-types
+    ```
+
+    ```bash npm
+    npm install elysia @elysia/node
+    ```
+
+    ```bash yarn
+    yarn add elysia @elysia/node
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Create the entry point">
+    Create `src/index.js`:
+
+    ```javascript
+    import { Elysia } from 'elysia'
+    import { node } from '@elysia/node'
+
+    const app = new Elysia({ adapter: node() })
+      .get('/', () => 'Hello Elysia')
+      .listen(3000, ({ hostname, port }) => {
+        console.log(`Elysia is running at ${hostname}:${port}`)
+      })
+    ```
+  </Step>
+  <Step title="Add scripts to package.json">
+    ```json
+    {
+      "type": "module",
+      "scripts": {
+        "dev": "node src/index.js",
+        "start": "NODE_ENV=production node src/index.js"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+  </Tab>
+  <Tab title="Web Standard">
+
+## WinterTC / Web Standard runtimes
+
+Elysia is [WinterTC compliant](https://wintertc.org/), meaning it runs on any framework or runtime that supports the Web Standard `Request` / `Response` API.
+
+<Steps>
+  <Step title="Install Elysia">
+    <CodeGroup>
+
+    ```bash bun
+    bun install elysia
+    ```
+
+    ```bash pnpm
+    pnpm install elysia @sinclair/typebox openapi-types
+    ```
+
+    ```bash npm
+    npm install elysia
+    ```
+
+    ```bash yarn
+    yarn add elysia
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Choose a runtime">
+    Select a platform that supports Web Standard Request/Response:
+
+    <CardGroup cols={2}>
+      <Card title="Cloudflare Workers" icon="cloud" href="/integrations/cloudflare-worker">
+        Deploy Elysia as a Cloudflare Worker.
+      </Card>
+      <Card title="Next.js" icon="n" href="/integrations/nextjs">
+        Use Elysia inside Next.js API routes.
+      </Card>
+      <Card title="Expo" icon="mobile" href="/integrations/expo">
+        Elysia as Expo App Router API routes.
+      </Card>
+      <Card title="Astro" icon="star" href="/integrations/astro">
+        Elysia as Astro API routes.
+      </Card>
+      <Card title="SvelteKit" icon="code" href="/integrations/sveltekit">
+        Elysia as SvelteKit API routes.
+      </Card>
+      <Card title="Vercel" icon="triangle" href="/integrations/vercel">
+        Elysia as Vercel Edge Functions.
+      </Card>
+    </CardGroup>
+  </Step>
+  <Step title="Custom runtime fallback">
+    If your runtime is not listed, expose `app.fetch` as the request handler:
+
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    const app = new Elysia()
+      .get('/', () => 'Hello Elysia')
+
+    export default app.fetch
+    ```
+
+    Any runtime that accepts a `(request: Request) => Response | Promise<Response>` function is compatible.
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+## Next steps
+
+Now that your server is running, explore the core concepts:
+
+<CardGroup cols={2}>
+  <Card title="Routing" icon="map" href="/essential/route">
+    Define routes, path parameters, query strings, and method handlers.
+  </Card>
+  <Card title="Validation" icon="shield-check" href="/essential/validation">
+    Validate requests at runtime using Elysia.t, Zod, Valibot, and more.
+  </Card>
+  <Card title="Eden client" icon="link" href="/eden/overview">
+    Connect a frontend with end-to-end type safety and no code generation.
+  </Card>
+  <Card title="Plugins" icon="plug" href="/plugins/overview">
+    Add CORS, JWT, OpenAPI, static files, and more with official plugins.
+  </Card>
+</CardGroup>

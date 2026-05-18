@@ -1,0 +1,169 @@
+---
+title: "Install and configure Eden for your Elysia server"
+description: "Add @elysia/eden to your frontend, export the server's App type, and wire up your first type-safe client call in under five minutes."
+---
+
+Eden is a client-side package. Install it in your frontend project alongside a dev dependency on Elysia itself — Eden needs the Elysia types to infer your server's schema.
+
+## Install the package
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/eden
+bun add -d elysia
+```
+
+```bash npm
+npm install @elysia/eden
+npm install --save-dev elysia
+```
+
+```bash pnpm
+pnpm add @elysia/eden
+pnpm add -D elysia
+```
+
+```bash yarn
+yarn add @elysia/eden
+yarn add --dev elysia
+```
+
+</CodeGroup>
+
+<Note>
+  The `elysia` dev dependency must match the version running on your server. Eden uses it only for type inference — it is never bundled into your frontend.
+</Note>
+
+## Export your server type
+
+Add a single `export type` line to your Elysia server file. This is the only change required on the server side.
+
+```typescript
+// server.ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .get('/', () => 'Hi Elysia')
+    .get('/id/:id', ({ params: { id } }) => id)
+    .post('/mirror', ({ body }) => body, {
+        body: t.Object({
+            id: t.Number(),
+            name: t.String()
+        })
+    })
+    .listen(3000)
+
+export type App = typeof app // [!code ++]
+```
+
+## Connect from the client
+
+Import the exported type and pass it as a generic to `treaty`. TypeScript will infer every route, parameter type, and response type automatically.
+
+```typescript
+// client.ts
+import { treaty } from '@elysia/eden'
+import type { App } from './server' // [!code ++]
+
+const client = treaty<App>('localhost:3000') // [!code ++]
+
+// response: 'Hi Elysia'
+const { data: index } = await client.get()
+
+// response: '1895'
+const { data: id } = await client.id({ id: 1895 }).get()
+
+// response: { id: 1895, name: 'Skadi' }
+const { data: nendoroid } = await client.mirror.post({
+    id: 1895,
+    name: 'Skadi'
+})
+```
+
+## Troubleshooting
+
+If Eden isn't picking up types correctly, work through these common causes in order.
+
+<AccordionGroup>
+  <Accordion title="Enable strict mode in tsconfig.json">
+    Eden's type inference requires TypeScript strict mode. Make sure your `tsconfig.json` includes:
+
+    ```json
+    {
+      "compilerOptions": {
+        "strict": true
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Mismatched Elysia version">
+    Both your frontend and server must use the same Elysia version. Check with:
+
+    ```bash
+    npm why elysia
+    ```
+
+    The output should show a single Elysia version at the top level. If you see multiple versions, align them in your `package.json`.
+  </Accordion>
+
+  <Accordion title="TypeScript version too old">
+    Eden uses TypeScript features like const generics and template literal types. You need **TypeScript >= 5.0** on your client.
+  </Accordion>
+
+  <Accordion title="Server not using method chaining">
+    Elysia builds up its type incrementally through method chaining. Each method returns a new typed instance. If you break the chain, the types won't propagate.
+
+    ```typescript
+    // ✅ correct — types are preserved through the chain
+    new Elysia()
+        .state('build', 1)
+        .get('/', ({ store: { build } }) => build)
+        .listen(3000)
+    ```
+
+    ```typescript
+    // ❌ incorrect — types are lost
+    const app = new Elysia()
+    app.state('build', 1)
+    app.get('/', ({ store: { build } }) => build)
+    app.listen(3000)
+    ```
+  </Accordion>
+
+  <Accordion title="Using Bun-specific APIs in responses">
+    If your handlers return Bun-specific types like `Bun.file`, install `@types/bun` as a dev dependency on the client too:
+
+    ```bash
+    bun add -d @types/bun
+    ```
+  </Accordion>
+
+  <Accordion title="Path aliases in a monorepo">
+    If your server uses TypeScript path aliases (e.g. `@/controllers`), your frontend's `tsconfig.json` must be able to resolve those same paths. Otherwise Eden will infer `any`.
+
+    Configure your root `tsconfig.json` to map each package with a namespace prefix:
+
+    ```json
+    {
+      "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+          "@frontend/*": ["./apps/frontend/src/*"],
+          "@backend/*": ["./apps/backend/src/*"]
+        }
+      }
+    }
+    ```
+
+    Then import the server type using the same alias:
+
+    ```typescript
+    import { treaty } from '@elysia/eden'
+    import type { app } from '@backend/index'
+
+    const client = treaty<app>('localhost:3000')
+    ```
+  </Accordion>
+</AccordionGroup>

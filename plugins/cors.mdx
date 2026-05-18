@@ -1,0 +1,153 @@
+---
+title: "CORS plugin: configure cross-origin resource sharing"
+description: "Control which origins, methods, and headers cross-origin requests may use. Supports strings, regexes, and custom functions for origin matching."
+---
+
+The `@elysia/cors` plugin adds support for customizing [Cross-Origin Resource Sharing](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) behavior. It sets the appropriate `Access-Control-*` response headers and handles preflight `OPTIONS` requests automatically.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/cors
+```
+
+```bash npm
+npm install @elysia/cors
+```
+
+```bash pnpm
+pnpm add @elysia/cors
+```
+
+```bash yarn
+yarn add @elysia/cors
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { cors } from '@elysia/cors'
+
+new Elysia().use(cors()).listen(3000)
+```
+
+With no arguments, the plugin allows requests from any origin by setting `Access-Control-Allow-Origin: *`.
+
+## Configuration
+
+### `origin`
+
+**Default:** `true`
+
+Controls which origins are permitted. Assigns the `Access-Control-Allow-Origin` header.
+
+| Value type | Behavior |
+|---|---|
+| `true` | Allow all origins (`*`) |
+| `false` | Block all cross-origin requests |
+| `string` | Allow only the exact origin string |
+| `RegExp` | Allow origins matching the pattern |
+| `Function` | Custom logic — return `true` to allow the request |
+| `Array` | Check each value in order; allow if any match |
+
+```typescript
+// Allow only a specific domain
+cors({ origin: 'https://example.com' })
+
+// Allow a subdomain pattern
+cors({ origin: /.*\.example\.com$/ })
+
+// Custom function
+cors({
+    origin: ({ request }) =>
+        request.headers.get('origin')?.endsWith('.example.com') ?? false
+})
+```
+
+### `methods`
+
+**Default:** `'*'`
+
+Allowed HTTP methods for cross-origin requests. Assigns `Access-Control-Allow-Methods`.
+
+- `'*'` — allow all methods
+- `string` — a single method or comma-delimited list, e.g. `'GET, POST'`
+- `string[]` — array of methods, e.g. `['GET', 'POST', 'PUT']`
+- `null | ''` — disallow cross-origin methods
+
+### `allowedHeaders`
+
+**Default:** `'*'`
+
+Headers the browser is permitted to send in a cross-origin request. Assigns `Access-Control-Allow-Headers`.
+
+- `string` — single header or comma-delimited list, e.g. `'Content-Type, Authorization'`
+- `string[]` — array of headers, e.g. `['Content-Type', 'Authorization']`
+
+### `exposeHeaders`
+
+**Default:** `'*'`
+
+Headers that browsers are permitted to access in cross-origin responses. Assigns `Access-Control-Expose-Headers`.
+
+- `string` — single header or comma-delimited list
+- `string[]` — array of headers
+
+### `credentials`
+
+**Default:** `true`
+
+Whether the browser should expose the response to JavaScript when the request includes credentials (cookies, authorization headers, or TLS certificates). Assigns `Access-Control-Allow-Credentials`.
+
+### `maxAge`
+
+**Default:** `5`
+
+How many seconds the results of a preflight request may be cached by the browser. Assigns `Access-Control-Max-Age`.
+
+### `preflight`
+
+Whether the server should respond to preflight `OPTIONS` requests. The plugin sends the appropriate headers in response to requests that include `Access-Control-Request-Method`, `Access-Control-Request-Headers`, and `Origin`.
+
+## Patterns
+
+### Allow requests from a top-level domain
+
+```typescript
+import { Elysia } from 'elysia'
+import { cors } from '@elysia/cors'
+
+const app = new Elysia()
+    .use(
+        cors({
+            origin: /.*\.saltyaom\.com$/
+        })
+    )
+    .get('/', () => 'Hi')
+    .listen(3000)
+```
+
+This allows requests from any subdomain of `saltyaom.com`.
+
+### Restrict to specific origins and methods
+
+```typescript
+import { Elysia } from 'elysia'
+import { cors } from '@elysia/cors'
+
+new Elysia()
+    .use(
+        cors({
+            origin: ['https://app.example.com', 'https://admin.example.com'],
+            methods: ['GET', 'POST', 'PUT', 'DELETE'],
+            allowedHeaders: ['Content-Type', 'Authorization'],
+            credentials: true
+        })
+    )
+    .listen(3000)
+```

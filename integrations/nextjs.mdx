@@ -1,0 +1,112 @@
+---
+title: "Use Elysia as Next.js API route handlers"
+description: "Run an Elysia server inside Next.js App Router catch-all route files. Share types between your frontend and backend with Eden Treaty for end-to-end type safety."
+---
+
+With the Next.js App Router, you can run Elysia directly inside route handler files. Because Elysia is WinterTC-compliant, it works with the same `Request`/`Response` primitives that Next.js route handlers use — no additional adapter needed.
+
+<Steps>
+  <Step title="Create a catch-all route file">
+    Create `app/api/[[...slugs]]/route.ts` in your Next.js project.
+  </Step>
+
+  <Step title="Define your Elysia server and export HTTP method handlers">
+    ```typescript
+    // app/api/[[...slugs]]/route.ts
+    import { Elysia, t } from 'elysia'
+
+    const app = new Elysia({ prefix: '/api' })
+      .get('/', 'Hello Nextjs')
+      .post('/', ({ body }) => body, {
+        body: t.Object({
+          name: t.String()
+        })
+      })
+
+    export const GET = app.fetch
+    export const POST = app.fetch
+    ```
+  </Step>
+</Steps>
+
+## Route prefix
+
+If you place your Elysia server in a subdirectory (e.g. `app/user/[[...slugs]]/route.ts`), you must set the `prefix` option to match the directory path:
+
+```typescript
+// app/user/[[...slugs]]/route.ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia({ prefix: '/user' })
+  .get('/', 'Hello Nextjs')
+  .post('/', ({ body }) => body, {
+    body: t.Object({
+      name: t.String()
+    })
+  })
+
+export const GET = app.fetch
+export const POST = app.fetch
+```
+
+## End-to-end type safety with Eden
+
+You can add [Eden Treaty](/eden/overview) for end-to-end type safety between your Next.js frontend and Elysia backend. The isomorphic fetch pattern lets Eden call Elysia directly on the server without a network round-trip, and through the network on the client.
+
+<Steps>
+  <Step title="Export your Elysia instance">
+    ```typescript
+    // app/api/[[...slugs]]/route.ts
+    import { Elysia } from 'elysia'
+
+    export const app = new Elysia({ prefix: '/api' })
+      .get('/', 'Hello Nextjs')
+
+    export const GET = app.fetch
+    export const POST = app.fetch
+    ```
+  </Step>
+
+  <Step title="Create an isomorphic Treaty client">
+    ```typescript
+    // lib/eden.ts
+    import { treaty } from '@elysia/eden'
+    import type { app } from '../app/api/[[...slugs]]/route'
+
+    // Use typeof process instead of typeof window — window is undefined at build time
+    export const api =
+      typeof process !== 'undefined'
+        ? treaty(app).api
+        : treaty<typeof app>('localhost:3000').api
+    ```
+  </Step>
+
+  <Step title="Use the client in server and client components">
+    ```tsx
+    // app/page.tsx
+    import { api } from '../lib/eden'
+
+    export default async function Page() {
+      const message = await api.get()
+
+      return <h1>Hello, {message}</h1>
+    }
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  Use `typeof process` rather than `typeof window` to distinguish server from client. The `window` object is undefined at build time and will cause hydration errors.
+</Tip>
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```
+
+<Note>
+  See [Next.js Route Handlers](https://nextjs.org/docs/app/building-your-application/routing/route-handlers) for further reference on the underlying routing mechanism.
+</Note>

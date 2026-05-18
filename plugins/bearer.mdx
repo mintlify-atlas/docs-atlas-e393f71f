@@ -1,0 +1,87 @@
+---
+title: "Bearer plugin: extract Authorization header tokens"
+description: "Extract Bearer tokens from Authorization headers per RFC6750. The token is available as context.bearer in handlers — apply your own validation logic."
+---
+
+The `@elysia/bearer` plugin extracts Bearer tokens from incoming `Authorization` headers as defined in [RFC6750](https://www.rfc-editor.org/rfc/rfc6750#section-2). It makes the token available in your handler context as `bearer`, leaving all validation logic up to you.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/bearer
+```
+
+```bash npm
+npm install @elysia/bearer
+```
+
+```bash pnpm
+pnpm add @elysia/bearer
+```
+
+```bash yarn
+yarn add @elysia/bearer
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { bearer } from '@elysia/bearer'
+
+const app = new Elysia()
+    .use(bearer())
+    .get('/sign', ({ bearer }) => bearer, {
+        beforeHandle({ bearer, set, status }) {
+            if (!bearer) {
+                set.headers['WWW-Authenticate'] =
+                    `Bearer realm='sign', error="invalid_request"`
+
+                return status(400, 'Unauthorized')
+            }
+        }
+    })
+    .listen(3000)
+```
+
+The `bearer` value in the context is the raw token string extracted from the `Authorization: Bearer <token>` header, or `undefined` if no bearer token is present.
+
+<Note>
+  This plugin only extracts the token. It does not validate it. Use it alongside `@elysia/jwt` or your own verification logic to authenticate requests.
+</Note>
+
+## Combining with JWT validation
+
+The bearer plugin pairs naturally with the JWT plugin. Use `bearer` to extract the token and `jwt.verify()` to validate it:
+
+```typescript
+import { Elysia } from 'elysia'
+import { bearer } from '@elysia/bearer'
+import { jwt } from '@elysia/jwt'
+
+const app = new Elysia()
+    .use(bearer())
+    .use(
+        jwt({
+            name: 'jwt',
+            secret: process.env.JWT_SECRET!
+        })
+    )
+    .derive(async ({ bearer, jwt }) => {
+        const payload = bearer ? await jwt.verify(bearer) : false
+        return { user: payload || null }
+    })
+    .get('/protected', ({ user, status }) => {
+        if (!user) return status(401, 'Unauthorized')
+        return `Hello, user`
+    })
+    .listen(3000)
+```
+
+<Tip>
+  Use `.derive()` to run token verification once and make the result available to all subsequent handlers, rather than repeating verification in each `beforeHandle`.
+</Tip>

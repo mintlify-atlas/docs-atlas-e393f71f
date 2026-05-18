@@ -1,0 +1,221 @@
+---
+title: "Drizzle ORM with Elysia: type-safe database queries"
+description: "Convert Drizzle table schemas into Elysia validation models using drizzle-typebox for end-to-end type safety from database to frontend."
+---
+
+Drizzle ORM is a headless TypeScript ORM focused on type safety and developer experience. You can convert Drizzle table schemas into Elysia validation models using [`drizzle-typebox`](https://npmjs.org/package/drizzle-typebox), enabling a single source of truth from your database schema through to your API validation and OpenAPI documentation.
+
+The flow looks like this:
+
+```
+                                                * ——————————————— *
+                                                |                 |
+                                           | -> |  Documentation  |
+* ————————— *             * ———————— * OpenAPI |                 |
+|           |   drizzle-  |          | ——————— * ——————————————— *
+|  Drizzle  | —————————-> |  Elysia  |
+|           |  -typebox   |          | ——————— * ——————————————— *
+* ————————— *             * ———————— *   Eden  |                 |
+                                           | -> |  Frontend Code  |
+                                               |                 |
+                                               * ——————————————— *
+```
+
+<Steps>
+  <Step title="Install Drizzle and drizzle-typebox">
+    ```bash
+    bun add drizzle-orm drizzle-typebox
+    ```
+  </Step>
+
+  <Step title="Pin @sinclair/typebox to avoid version conflicts">
+    A version mismatch between `drizzle-typebox` and Elysia can cause symbol conflicts. Find the version Elysia requires:
+
+    ```bash
+    grep "@sinclair/typebox" node_modules/elysia/package.json
+    ```
+
+    Then pin it in your `package.json` using the `overrides` field:
+
+    ```json
+    {
+      "overrides": {
+        "@sinclair/typebox": "0.32.4"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Define your Drizzle schema">
+    ```typescript
+    // src/database/schema.ts
+    import { pgTable, varchar, timestamp } from 'drizzle-orm/pg-core'
+    import { createId } from '@paralleldrive/cuid2'
+
+    export const user = pgTable('user', {
+      id: varchar('id').$defaultFn(() => createId()).primaryKey(),
+      username: varchar('username').notNull().unique(),
+      password: varchar('password').notNull(),
+      email: varchar('email').notNull().unique(),
+      salt: varchar('salt', { length: 64 }).notNull(),
+      createdAt: timestamp('created_at').defaultNow().notNull()
+    })
+
+    export const table = { user } as const
+    export type Table = typeof table
+    ```
+  </Step>
+
+  <Step title="Convert the schema and use it in Elysia">
+    Use `createInsertSchema` from `drizzle-typebox` to generate a TypeBox model, then pass it to Elysia's validation:
+
+    ```typescript
+    // src/index.ts
+    import { Elysia, t } from 'elysia'
+    import { createInsertSchema } from 'drizzle-typebox'
+    import { table } from './database/schema'
+
+    const _createUser = createInsertSchema(table.user, {
+      email: t.String({ format: 'email' })
+    })
+
+    new Elysia()
+      .post('/sign-up', ({ body }) => {
+        // Create a new user
+      }, {
+        body: t.Omit(_createUser, ['id', 'salt', 'createdAt'])
+      })
+    ```
+  </Step>
+</Steps>
+
+## Avoiding infinite type instantiation
+
+If you nest a `drizzle-typebox` type directly inside an Elysia schema call, TypeScript may report **"Type instantiation is possibly infinite"**. Always assign the drizzle-typebox result to a variable first:
+
+```typescript
+import { t } from 'elysia'
+import { createInsertSchema } from 'drizzle-typebox'
+import { table } from './database/schema'
+
+const _createUser = createInsertSchema(table.user, {
+  email: t.String({ format: 'email' })
+})
+
+// Correct — reference the variable
+const createUser = t.Omit(_createUser, ['id', 'salt', 'createdAt'])
+
+// Incorrect — inline call causes infinite type instantiation
+const createUser = t.Omit(
+  createInsertSchema(table.user, { email: t.String({ format: 'email' }) }),
+  ['id', 'salt', 'createdAt']
+)
+```
+
+## Spread utility
+
+For large schemas, repeatedly calling `t.Pick` and `t.Omit` is cumbersome. Use this `spread` utility to destructure a Drizzle schema into a plain object you can pick from by property name:
+
+```typescript
+// src/database/utils.ts
+import { Kind, type TObject } from '@sinclair/typebox'
+import { createInsertSchema, createSelectSchema, BuildSchema } from 'drizzle-typebox'
+import { table } from './schema'
+import type { Table } from 'drizzle-orm'
+
+type Spread<
+  T extends TObject | Table,
+  Mode extends 'select' | 'insert' | undefined,
+> =
+  T extends TObject<infer Fields>
+    ? { [K in keyof Fields]: Fields[K] }
+    : T extends Table
+      ? Mode extends 'select'
+        ? BuildSchema<'select', T['_']['columns'], undefined>['properties']
+        : Mode extends 'insert'
+          ? BuildSchema<'insert', T['_']['columns'], undefined>['properties']
+          : {}
+      : {}
+
+export const spread = <
+  T extends TObject | Table,
+  Mode extends 'select' | 'insert' | undefined,
+>(schema: T, mode?: Mode): Spread<T, Mode> => {
+  const newSchema: Record<string, unknown> = {}
+  let table
+
+  switch (mode) {
+    case 'insert':
+    case 'select':
+      if (Kind in schema) { table = schema; break }
+      table = mode === 'insert' ? createInsertSchema(schema) : createSelectSchema(schema)
+      break
+    default:
+      if (!(Kind in schema)) throw new Error('Expect a schema')
+      table = schema
+  }
+
+  for (const key of Object.keys(table.properties))
+    newSchema[key] = table.properties[key]
+
+  return newSchema as any
+}
+
+export const spreads = <
+  T extends Record<string, TObject | Table>,
+  Mode extends 'select' | 'insert' | undefined,
+>(models: T, mode?: Mode): { [K in keyof T]: Spread<T[K], Mode> } => {
+  const newSchema: Record<string, unknown> = {}
+  for (const key of Object.keys(models)) newSchema[key] = spread(models[key], mode)
+  return newSchema as any
+}
+```
+
+### Table singleton pattern
+
+We recommend storing schema models in a singleton for easy reuse across the codebase:
+
+```typescript
+// src/database/model.ts
+import { t } from 'elysia'
+import { createInsertSchema, createSelectSchema } from 'drizzle-typebox'
+import { table } from './schema'
+import { spreads } from './utils'
+
+export const db = {
+  insert: spreads({
+    user: createInsertSchema(table.user, {
+      email: t.String({ format: 'email' })
+    })
+  }, 'insert'),
+  select: spreads({
+    user: createSelectSchema(table.user, {
+      email: t.String({ format: 'email' })
+    })
+  }, 'select')
+} as const
+```
+
+Use it in your Elysia routes:
+
+```typescript
+// src/index.ts
+import { Elysia, t } from 'elysia'
+import { db } from './database/model'
+
+const { user } = db.insert
+
+new Elysia()
+  .post('/sign-up', ({ body }) => {
+    // Create a new user
+  }, {
+    body: t.Object({
+      username: user.username,
+      password: user.password
+    })
+  })
+```
+
+<Note>
+  For more information, refer to the [Drizzle ORM](https://orm.drizzle.team) and [Drizzle TypeBox](https://orm.drizzle.team/docs/typebox) documentation.
+</Note>

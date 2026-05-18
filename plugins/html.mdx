@@ -1,0 +1,175 @@
+---
+title: "HTML plugin: return JSX and HTML responses from Elysia"
+description: "Return JSX or raw HTML strings from Elysia handlers. Sets Content-Type automatically, injects the doctype, and detects XSS vulnerabilities at compile time."
+---
+
+The `@elysia/html` plugin lets you return JSX components and HTML strings from Elysia handlers. It automatically sets `Content-Type: text/html; charset=utf8`, prepends `<!doctype html>` where needed, and converts the result to a proper `Response`.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/html
+```
+
+```bash npm
+npm install @elysia/html
+```
+
+```bash pnpm
+pnpm add @elysia/html
+```
+
+```bash yarn
+yarn add @elysia/html
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { html, Html } from '@elysia/html'
+
+new Elysia()
+    .use(html())
+    .get(
+        '/html',
+        () => `
+            <html lang='en'>
+                <head>
+                    <title>Hello World</title>
+                </head>
+                <body>
+                    <h1>Hello World</h1>
+                </body>
+            </html>`
+    )
+    .get('/jsx', () => (
+        <html lang="en">
+            <head>
+                <title>Hello World</title>
+            </head>
+            <body>
+                <h1>Hello World</h1>
+            </body>
+        </html>
+    ))
+    .listen(3000)
+```
+
+## JSX setup
+
+The HTML plugin is based on [@kitajs/html](https://github.com/kitajs/html), which compiles JSX to strings at build time for high performance.
+
+<Steps>
+  <Step title="Rename files to .tsx">
+    Any file that uses JSX syntax must use the `.tsx` (or `.jsx`) extension.
+  </Step>
+  <Step title="Update tsconfig.json">
+    Add the JSX compiler options to your `tsconfig.json`:
+
+    ```json
+    {
+        "compilerOptions": {
+            "jsx": "react",
+            "jsxFactory": "Html.createElement",
+            "jsxFragmentFactory": "Html.Fragment"
+        }
+    }
+    ```
+  </Step>
+  <Step title="Import Html in JSX files">
+    Import the `Html` namespace in every file that uses JSX:
+
+    ```tsx
+    import { Html } from '@elysia/html'
+    ```
+
+    Note the uppercase `Html` — using `html` (lowercase) will cause a TypeScript error.
+  </Step>
+</Steps>
+
+## XSS protection
+
+The plugin uses [@kitajs/html](https://github.com/kitajs/html) which detects possible XSS vulnerabilities at compile time. Use the `safe` attribute to sanitize user-supplied values:
+
+```tsx
+import { Elysia, t } from 'elysia'
+import { html, Html } from '@elysia/html'
+
+new Elysia()
+    .use(html())
+    .post(
+        '/',
+        ({ body }) => (
+            <html lang="en">
+                <head>
+                    <title>Hello World</title>
+                </head>
+                <body>
+                    <h1 safe>{body}</h1>
+                </body>
+            </html>
+        ),
+        {
+            body: t.String()
+        }
+    )
+    .listen(3000)
+```
+
+For type-level XSS reminders across a large codebase, install the TypeScript plugin:
+
+<CodeGroup>
+
+```bash bun
+bun add @kitajs/ts-html-plugin
+```
+
+```bash npm
+npm install @kitajs/ts-html-plugin
+```
+
+</CodeGroup>
+
+Then add it to `tsconfig.json`:
+
+```json
+{
+    "compilerOptions": {
+        "jsx": "react",
+        "jsxFactory": "Html.createElement",
+        "jsxFragmentFactory": "Html.Fragment",
+        "plugins": [{ "name": "@kitajs/ts-html-plugin" }]
+    }
+}
+```
+
+## Options
+
+### `contentType`
+
+**Default:** `'text/html; charset=utf8'`
+
+The `Content-Type` header value set on HTML responses.
+
+### `autoDetect`
+
+**Default:** `true`
+
+When `true`, the plugin inspects returned strings and sets the `Content-Type` header automatically when HTML is detected.
+
+### `autoDoctype`
+
+**Default:** `true`
+
+When `true`, prepends `<!doctype html>` to responses that start with `<html>` but don't already include a doctype. Set to `'full'` to also add doctypes to HTML responses returned without the plugin.
+
+### `isHtml`
+
+**Type:** `(value: string) => boolean`
+
+Custom function to determine whether a string value is HTML. The default implementation returns `true` when the string is longer than 7 characters, starts with `<`, and ends with `>`.

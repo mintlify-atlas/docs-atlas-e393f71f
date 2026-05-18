@@ -1,0 +1,152 @@
+---
+title: "Deploy Elysia to Cloudflare Workers"
+description: "Run Elysia on Cloudflare Workers using the built-in CloudflareAdapter with Ahead of Time Compilation and Wrangler for local development."
+---
+
+Elysia supports Cloudflare Workers through an experimental Cloudflare Worker adapter. The adapter enables Ahead of Time (AoT) compilation, taking advantage of Cloudflare's support for function compilation during startup introduced in compatibility date `2025-06-01`.
+
+<Warning>
+  Cloudflare Worker support is currently experimental.
+</Warning>
+
+<Steps>
+  <Step title="Initialize a new Worker project with Wrangler">
+    You need [Wrangler](https://developers.cloudflare.com/workers/wrangler/install-and-update) to scaffold and run your Worker locally.
+
+    ```bash
+    wrangler init elysia-on-cloudflare
+    ```
+  </Step>
+
+  <Step title="Add the CloudflareAdapter to your app">
+    Import `CloudflareAdapter` from `elysia/adapter/cloudflare-worker`, pass it as the `adapter` option, and call `.compile()` before exporting.
+
+    ```typescript
+    import { Elysia } from 'elysia'
+    import { CloudflareAdapter } from 'elysia/adapter/cloudflare-worker'
+
+    export default new Elysia({
+      adapter: CloudflareAdapter
+    })
+      .get('/', () => 'Hello Cloudflare Worker!')
+      .compile()
+    ```
+
+    <Note>
+      Calling `.compile()` is required for Elysia to work on Cloudflare Workers.
+    </Note>
+  </Step>
+
+  <Step title="Set compatibility_date in your Wrangler config">
+    AoT compilation requires `compatibility_date` set to at least `2025-06-01`.
+
+    <CodeGroup>
+
+    ```jsonc wrangler.jsonc
+    {
+      "$schema": "node_modules/wrangler/config-schema.json",
+      "name": "elysia-on-cloudflare",
+      "main": "src/index.ts",
+      "compatibility_date": "2025-06-01"
+    }
+    ```
+
+    ```toml wrangler.toml
+    name = "elysia-on-cloudflare"
+    main = "src/index.ts"
+    compatibility_date = "2025-06-01"
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    wrangler dev
+    ```
+
+    The development server starts at `http://localhost:8787`.
+  </Step>
+</Steps>
+
+## Bindings
+
+Access Cloudflare Workers bindings by importing `env` from `cloudflare:workers`:
+
+```typescript
+import { Elysia } from 'elysia'
+import { CloudflareAdapter } from 'elysia/adapter/cloudflare-worker'
+import { env } from 'cloudflare:workers'
+
+export default new Elysia({
+  adapter: CloudflareAdapter
+})
+  .get('/', () => `Hello ${await env.KV.get('my-key')}`)
+  .compile()
+```
+
+See [Cloudflare Workers: Bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/#importing-env-as-a-global) for the full list of supported binding types.
+
+## Static files
+
+The Static Plugin does not work on Cloudflare Workers due to the absence of the `fs` module. Use [Cloudflare's built-in static asset serving](https://developers.cloudflare.com/workers/static-assets/) instead.
+
+Add the `assets` field to your Wrangler config:
+
+<CodeGroup>
+
+```jsonc wrangler.jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "elysia-on-cloudflare",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  "assets": { "directory": "public" }
+}
+```
+
+```toml wrangler.toml
+name = "elysia-on-cloudflare"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+assets = { directory = "public" }
+```
+
+</CodeGroup>
+
+Place your static files in the `public` folder. Given the following structure:
+
+```
+├── public
+│   ├── kyuukurarin.mp4
+│   └── static
+│       └── mika.webp
+├── src
+│   └── index.ts
+└── wrangler.toml
+```
+
+Files will be accessible at `/kyuukurarin.mp4` and `/static/mika.webp`.
+
+## Limitations
+
+| Limitation | Details |
+|---|---|
+| `Elysia.file` and Static Plugin | Not supported — no `fs` module available |
+| OpenAPI Type Gen | Not supported — no `fs` module available |
+| Inline response values | Cannot define `Response` before server start |
+
+```typescript
+// This will throw an error on Cloudflare Workers
+new Elysia()
+  .get('/', 'Hello Elysia')
+  .listen(3000)
+```
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```

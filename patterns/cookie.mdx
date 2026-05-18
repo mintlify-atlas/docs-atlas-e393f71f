@@ -1,0 +1,241 @@
+---
+title: "Cookies: reading, writing, and signing with Elysia"
+description: "Access, mutate, validate, and sign cookies with Elysia's reactive cookie API — no getCookie or setCookie, just direct property access on cookie values."
+---
+
+Elysia treats cookies as reactive signal-like objects. Instead of separate get and set functions, you destructure the cookie name from context and read or write its `.value` directly. Changes are reflected in the response headers automatically.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { name } }) => {
+        // Read
+        name.value
+
+        // Write
+        name.value = 'New Value'
+    })
+```
+
+Elysia encodes and decodes object values automatically — you can store plain JavaScript objects in cookies without manual serialization.
+
+<Note>
+Cookie objects can never be `undefined` because they are Proxy instances. Only `cookie.value` can be undefined. Use a cookie schema or disable `strictNullChecks` in `tsconfig.json` to suppress TypeScript warnings.
+</Note>
+
+## Reactivity
+
+The cookie jar is a single source of truth. When you assign to `cookie.value` or update an attribute, Elysia automatically syncs the `Set-Cookie` response header. Iterating over the cookie object only yields cookies that were actually sent in the request.
+
+## Cookie attributes
+
+Set individual attributes directly on the cookie object, or use `set` / `add` for batch updates.
+
+### Direct assignment
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { name } }) => {
+        name.domain = 'millennium.sh'
+        name.httpOnly = true
+    })
+```
+
+### set
+
+Reset all attributes and apply the new values at once:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { name } }) => {
+        name.set({
+            domain: 'millennium.sh',
+            httpOnly: true
+        })
+    })
+```
+
+### add
+
+Merge new values into the existing attributes without resetting unrelated ones:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { name } }) => {
+        name.add({ httpOnly: true })
+    })
+```
+
+## Removing cookies
+
+Use `.remove()` on the cookie or the `delete` operator on the cookie jar:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie, cookie: { name } }) => {
+        name.remove()
+
+        delete cookie.name
+    })
+```
+
+## Cookie schema
+
+Validate cookie values and get full TypeScript inference by passing a `t.Cookie` schema to the route handler.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { name } }) => {
+        name.value = {
+            id: 617,
+            name: 'Summoning 101'
+        }
+    }, {
+        cookie: t.Cookie({
+            name: t.Object({
+                id: t.Numeric(),
+                name: t.String()
+            })
+        })
+    })
+```
+
+### Nullable cookies
+
+Wrap the cookie type with `t.Optional` to allow a cookie to be absent:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { name } }) => {
+        name.value = {
+            id: 617,
+            name: 'Summoning 101'
+        }
+    }, {
+        cookie: t.Cookie({
+            name: t.Optional(
+                t.Object({
+                    id: t.Numeric(),
+                    name: t.String()
+                })
+            )
+        })
+    })
+```
+
+## Cookie signatures
+
+Signing a cookie appends a cryptographic hash derived from the cookie value and a secret key. Elysia verifies the signature on every request and rejects tampered cookies.
+
+### Per-route signing
+
+Provide `secrets` and a `sign` array listing the cookie names to protect:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/', ({ cookie: { profile } }) => {
+        profile.value = {
+            id: 617,
+            name: 'Summoning 101'
+        }
+    }, {
+        cookie: t.Cookie({
+            profile: t.Object({
+                id: t.Numeric(),
+                name: t.String()
+            })
+        }, {
+            secrets: 'Fischl von Luftschloss Narfidort',
+            sign: ['profile']
+        })
+    })
+```
+
+### Global signing via constructor
+
+Apply signing globally to all routes by configuring the Elysia instance:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia({
+    cookie: {
+        secrets: 'Fischl von Luftschloss Narfidort',
+        sign: ['profile']
+    }
+})
+    .get('/', ({ cookie: { profile } }) => {
+        profile.value = {
+            id: 617,
+            name: 'Summoning 101'
+        }
+    }, {
+        cookie: t.Cookie({
+            profile: t.Object({
+                id: t.Numeric(),
+                name: t.String()
+            })
+        })
+    })
+```
+
+## Cookie rotation
+
+To rotate secrets without invalidating existing cookies, pass an array of secrets. Elysia signs new cookies with the first secret and verifies against all secrets in the array.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia({
+    cookie: {
+        secrets: ['Vengeance will be mine', 'Fischl von Luftschloss Narfidort']
+    }
+})
+```
+
+### Transitioning from unsigned to signed cookies
+
+Include `null` at the end of the secrets array to allow existing unsigned cookies to pass through during the migration period:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia({
+    cookie: {
+        secrets: ['Vengeance will be mine', 'Fischl von Luftschloss Narfidort', null]
+    }
+})
+```
+
+<Warning>
+Only allow unsigned cookies during the transition period. Remove `null` from the array once all clients have received signed cookies.
+</Warning>
+
+## Attribute reference
+
+| Attribute  | Default             | Description                                                     |
+| ---------- | ------------------- | --------------------------------------------------------------- |
+| `domain`   | —                   | Restricts cookie to a specific domain                           |
+| `encode`   | `encodeURIComponent`| Function used to encode the cookie value                        |
+| `expires`  | —                   | Absolute expiry date (use `maxAge` when both are needed)        |
+| `httpOnly` | `false`             | Prevents client-side JavaScript from reading the cookie         |
+| `maxAge`   | —                   | Relative expiry in seconds; takes precedence over `expires`     |
+| `path`     | handler path        | Restricts cookie to a URL path prefix                           |
+| `priority` | `medium`            | `low`, `medium`, or `high` (non-standard, may be ignored)       |
+| `sameSite` | —                   | `'lax'`, `'strict'`, `'none'`, `true`, or `false`              |
+| `secure`   | `false`             | Only sent over HTTPS connections                                |

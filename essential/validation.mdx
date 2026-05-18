@@ -1,0 +1,448 @@
+---
+title: "Validation: enforce types at runtime and compile time"
+description: "Use Elysia.t (TypeBox) or Standard Schema libraries like Zod and Valibot to validate body, params, query, headers, cookies, and responses with one schema."
+---
+
+Elysia validates incoming data and outgoing responses against declarative schemas. A single schema acts as the **single source of truth** for runtime validation, TypeScript types, data coercion, and OpenAPI documentation — with no duplication.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/id/:id', ({ params: { id } }) => id, {
+        params: t.Object({
+            id: t.Number()
+        })
+    })
+    .listen(3000)
+```
+
+## Schema builders
+
+### Elysia.t (TypeBox)
+
+`t` is Elysia's built-in schema builder, based on [TypeBox](https://github.com/sinclairzx81/typebox). It generates JSON Schema-compatible definitions that work at runtime, at compile time, and in OpenAPI output.
+
+```typescript
+import { t } from 'elysia'
+
+const MyType = t.Object({
+    hello: t.Literal('Elysia')
+})
+
+type MyType = typeof MyType.static
+// { hello: 'Elysia' }
+```
+
+A single TypeBox schema covers:
+- Runtime validation
+- Data coercion
+- TypeScript types
+- OpenAPI schema generation
+
+### Standard Schema support
+
+Elysia supports [Standard Schema](https://github.com/standard-schema/standard-schema), so you can use any compatible library alongside or instead of `t`.
+
+Supported libraries include Zod, Valibot, ArkType, Effect Schema, Yup, Joi, and [more](https://github.com/standard-schema/standard-schema).
+
+```typescript
+import { Elysia } from 'elysia'
+import { z } from 'zod'
+import * as v from 'valibot'
+
+new Elysia()
+    .get('/id/:id', ({ params: { id }, query: { name } }) => id, {
+        params: z.object({
+            id: z.coerce.number()
+        }),
+        query: v.object({
+            name: v.literal('Lilith')
+        })
+    })
+    .listen(3000)
+```
+
+You can mix validators from different libraries in the same handler without any issues.
+
+## Schema types
+
+Pass a schema object as the third argument to any route handler to validate the corresponding part of the request or response.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/id/:id', () => 'Hello World!', {
+        query: t.Object({
+            name: t.String()
+        }),
+        params: t.Object({
+            id: t.Number()
+        })
+    })
+    .listen(3000)
+```
+
+<CardGroup cols={3}>
+  <Card title="body" icon="inbox" href="#body">
+    Incoming HTTP message body
+  </Card>
+  <Card title="query" icon="magnifying-glass" href="#query">
+    URL query string parameters
+  </Card>
+  <Card title="params" icon="route" href="#params">
+    Path parameters
+  </Card>
+  <Card title="headers" icon="heading" href="#headers">
+    Request headers
+  </Card>
+  <Card title="cookie" icon="cookie" href="#cookie">
+    Request cookies
+  </Card>
+  <Card title="response" icon="arrow-right" href="#response">
+    Handler response shape
+  </Card>
+</CardGroup>
+
+## body
+
+Validates the HTTP message body. Applicable to POST, PUT, and PATCH requests.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .post('/body', ({ body }) => body, {
+        body: t.Object({
+            name: t.String()
+        })
+    })
+    .listen(3000)
+```
+
+| Body | Result |
+| ---- | ------ |
+| `{ name: 'Elysia' }` | ✅ |
+| `{ name: 1 }` | ❌ |
+| `{ alias: 'Elysia' }` | ❌ |
+| `undefined` | ❌ |
+
+<Note>
+  Elysia disables body parsing for GET and HEAD requests per HTTP/1.1 [RFC 2616](https://www.rfc-editor.org/rfc/rfc2616#section-4.3).
+</Note>
+
+### File uploads
+
+Use `t.File` for single file uploads and `t.Files` for multiple. Elysia automatically sets the content-type to `multipart/form-data`.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .post('/upload', ({ body }) => body, {
+        body: t.Object({
+            file: t.File({ format: 'image/*' }),
+            multipleFiles: t.Files()
+        })
+    })
+    .listen(3000)
+```
+
+<Warning>
+  When using Standard Schema for file uploads, use the exported `fileType` utility to validate file contents by magic number — most validators only check the MIME type string, which can be spoofed.
+
+  ```typescript
+  import { Elysia, fileType } from 'elysia'
+  import { z } from 'zod'
+
+  new Elysia()
+      .post('/upload', ({ body }) => body, {
+          body: z.object({
+              file: z.file().refine((f) => fileType(f, 'image/jpeg'))
+          })
+      })
+  ```
+</Warning>
+
+## query
+
+Validates URL query parameters. All query values arrive as strings; Elysia coerces them to the declared type.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/search', ({ query }) => query, {
+        query: t.Object({
+            name: t.String()
+        })
+    })
+    .listen(3000)
+```
+
+To accept an array of values, declare the property as `t.Array`:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/', ({ query }) => query, {
+        query: t.Object({
+            name: t.Array(t.String())
+        })
+    })
+    .listen(3000)
+```
+
+Elysia supports two array formats:
+- **nuqs format** — comma-delimited: `?name=rapi,anis,neon`
+- **HTML form format** — repeated key: `?name=rapi&name=anis&name=neon`
+
+## params
+
+Validates path parameters. You usually only need this when you require a specific type (e.g. numeric ID) or a template literal pattern.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/id/:id', ({ params }) => params, {
+        params: t.Object({
+            id: t.Number()
+        })
+    })
+```
+
+When no params schema is provided, Elysia infers all params as `string`.
+
+## headers
+
+Validates request headers. By default, `additionalProperties` is `true` so extra headers are allowed.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/protected', ({ headers }) => headers, {
+        headers: t.Object({
+            authorization: t.String()
+        })
+    })
+```
+
+<Tip>
+  Elysia parses headers as lowercase keys only. Always use lowercase field names in your header schema (e.g. `authorization`, not `Authorization`).
+</Tip>
+
+## cookie
+
+Validates request cookies. Use `t.Cookie` for cookie-specific options like `secure` and `httpOnly`.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/me', ({ cookie }) => cookie.name.value, {
+        cookie: t.Cookie({
+            name: t.String()
+        }, {
+            secure: true,
+            httpOnly: true
+        })
+    })
+```
+
+## response
+
+Validates the value returned by the handler. Use a plain schema to cover all status codes, or a status-keyed object for per-status validation.
+
+<CodeGroup>
+
+```typescript any status
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/response', () => ({ name: 'Jane Doe' }), {
+        response: t.Object({
+            name: t.String()
+        })
+    })
+```
+
+```typescript per status
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/response', ({ status }) => {
+        if (Math.random() > 0.5)
+            return status(400, { error: 'Something went wrong' })
+
+        return { name: 'Jane Doe' }
+    }, {
+        response: {
+            200: t.Object({ name: t.String() }),
+            400: t.Object({ error: t.String() })
+        }
+    })
+```
+
+</CodeGroup>
+
+## Guard
+
+Apply a schema to multiple handlers at once using `.guard()`. Any route registered after the guard inherits its constraints.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/none', () => 'hi')       // no validation
+
+    .guard({
+        query: t.Object({
+            name: t.String()
+        })
+    })
+    .get('/query', ({ query }) => query) // requires ?name=...
+    .listen(3000)
+```
+
+Guards support two schema composition modes, set with the `schema` property:
+
+| Mode | Behaviour |
+| ---- | --------- |
+| `override` (default) | Local schema replaces the guard schema when they conflict |
+| `standalone` | Both schemas are validated independently |
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .guard({
+        schema: 'standalone',
+        response: t.Object({ title: t.String() })
+    })
+```
+
+## Custom error messages
+
+### Inline error property
+
+Pass an `error` property to any `t.*` type to override the default error message.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .post('/', () => 'Hello World!', {
+        body: t.Object({
+            x: t.Number({ error: 'x must be a number' })
+        })
+    })
+    .listen(3000)
+```
+
+The `error` value can also be a function for dynamic messages:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .post('/', () => 'Hello World!', {
+        body: t.Object({
+            x: t.Number({
+                error() {
+                    return 'Expected x to be a number'
+                }
+            })
+        })
+    })
+    .listen(3000)
+```
+
+### onError handler
+
+Handle all validation failures globally by listening for the `VALIDATION` error code.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .onError(({ code, error }) => {
+        if (code === 'VALIDATION')
+            return error.message
+    })
+    .listen(3000)
+```
+
+`ValidationError` exposes `error.all` — an array of every validation failure — so you can inspect or log individual field errors.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .post('/', ({ body }) => body, {
+        body: t.Object({
+            name: t.String(),
+            age: t.Number()
+        }),
+        error({ code, error }) {
+            if (code === 'VALIDATION') {
+                const name = error.all.find(
+                    (x) => x.summary && x.path === '/name'
+                )
+                if (name) console.log(name)
+            }
+        }
+    })
+    .listen(3000)
+```
+
+## Reference models
+
+Register a named model with `.model()` and reference it by name in any route. This avoids repeating the same schema in multiple places and keeps OpenAPI output consistent.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .model({
+        sign: t.Object({
+            username: t.String(),
+            password: t.String()
+        })
+    })
+    .post('/sign-in', ({ body }) => body, {
+        body: 'sign',
+        response: 'sign'
+    })
+```
+
+Models compose naturally with plugins, letting you co-locate related schemas and import them as a unit.
+
+```typescript
+// auth.model.ts
+import { Elysia, t } from 'elysia'
+
+export const authModel = new Elysia()
+    .model({
+        sign: t.Object({
+            username: t.String(),
+            password: t.String()
+        })
+    })
+```
+
+```typescript
+// index.ts
+import { Elysia } from 'elysia'
+import { authModel } from './auth.model'
+
+const app = new Elysia()
+    .use(authModel)
+    .post('/sign-in', ({ body }) => body, {
+        body: 'sign',
+        response: 'sign'
+    })
+```

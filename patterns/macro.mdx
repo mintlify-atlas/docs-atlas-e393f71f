@@ -1,0 +1,221 @@
+---
+title: "Macros: reusable route-level configuration"
+description: "Define reusable lifecycle hooks and schema extensions on a per-route basis using Elysia macros for clean, composable route configuration."
+---
+
+Macros let you package lifecycle events, schema validation, and context extensions into reusable route options. Once you define a macro on a plugin, its properties become available in any route's hook object — keeping route definitions concise while centralizing shared logic.
+
+## Defining a macro
+
+Use `.macro()` to declare named properties that map to lifecycle behavior. Each property receives the value passed in the route hook and returns a lifecycle configuration object.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const plugin = new Elysia({ name: 'plugin' })
+    .macro({
+        hi: (word: string) => ({
+            beforeHandle() {
+                console.log(word)
+            }
+        })
+    })
+
+const app = new Elysia()
+    .use(plugin)
+    .get('/', () => 'hi', {
+        hi: 'Elysia'
+    })
+```
+
+Accessing that route logs `"Elysia"` to the console.
+
+## Property shorthand
+
+Starting from Elysia 1.2.10, a macro property can be an object instead of a function. When it is an object, it behaves as a function that accepts a boolean and runs only when `true`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+export const auth = new Elysia()
+    .macro({
+        // Object shorthand — runs when isAuth: true
+        isAuth: {
+            resolve: () => ({
+                user: 'saltyaom'
+            })
+        }
+    })
+```
+
+## Error handling
+
+Return a `status` from a macro's lifecycle to send an HTTP error response. Using `return status(...)` is preferred over `throw` to preserve correct type inference for Eden and OpenAPI.
+
+```typescript
+import { Elysia, status } from 'elysia'
+
+new Elysia()
+    .macro({
+        auth: {
+            resolve({ headers }) {
+                if (!headers.authorization)
+                    return status(401, 'Unauthorized')
+
+                return {
+                    user: 'SaltyAom'
+                }
+            }
+        }
+    })
+    .get('/', ({ user }) => `Hello ${user}`, {
+        auth: true
+    })
+```
+
+<Warning>
+If you `throw new Error()` inside a macro instead of returning a `status`, Elysia converts it to `500 Internal Server Error` and type inference for Eden will not reflect the correct status code.
+</Warning>
+
+## Resolve
+
+Return a `resolve` function from your macro to inject new properties into the request context. This is useful for authentication, database lookups, or any per-request data enrichment.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .macro({
+        user: (enabled: true) => ({
+            resolve: () => ({
+                user: 'Pardofelis'
+            })
+        })
+    })
+    .get('/', ({ user }) => user, {
+        user: true
+    })
+```
+
+Common use cases for `resolve` in macros:
+- Authenticate a token and attach the user object to context
+- Run a database query and attach results to context
+- Decode and validate a session
+
+### Extending macros with resolve
+
+TypeScript cannot infer types across macro extensions. Use the named single-macro form as a workaround.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .macro('user', {
+        resolve: () => ({
+            user: 'lilith' as const
+        })
+    })
+    .macro('user2', {
+        user: true,
+        resolve: ({ user }) => {
+            // `user` is correctly typed here
+        }
+    })
+```
+
+## Schema
+
+A macro can attach a schema to every route that activates it. The macro schema is merged with any schema already defined on the route.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .macro({
+        withFriends: {
+            body: t.Object({
+                friends: t.Tuple([t.Literal('Fouco'), t.Literal('Sartre')])
+            })
+        }
+    })
+    .post('/', ({ body }) => body.friends, {
+        body: t.Object({
+            name: t.Literal('Lilith')
+        }),
+        withFriends: true
+    })
+```
+
+Multiple macros can contribute schemas to the same route simultaneously without conflict.
+
+### Schema with lifecycle in the same macro
+
+To get type inference for lifecycle events within the same macro, use the named single-macro form.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .macro('withFriends', {
+        body: t.Object({
+            friends: t.Tuple([t.Literal('Fouco'), t.Literal('Sartre')])
+        }),
+        beforeHandle({ body: { friends } }) {
+            // `friends` is typed correctly here
+        }
+    })
+```
+
+## Extension
+
+Macros can reference other macros defined in the same `.macro()` call, enabling composition.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .macro({
+        sartre: {
+            body: t.Object({
+                sartre: t.Literal('Sartre')
+            })
+        },
+        fouco: {
+            body: t.Object({
+                fouco: t.Literal('Fouco')
+            })
+        },
+        lilith: {
+            fouco: true,
+            sartre: true,
+            body: t.Object({
+                lilith: t.Literal('Lilith')
+            })
+        }
+    })
+    .post('/', ({ body }) => body, {
+        lilith: true
+    })
+```
+
+## Deduplication
+
+Elysia deduplicates lifecycle events automatically so the same handler is never registered twice. The deduplication seed defaults to the property value, but you can override it.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .macro({
+        sartre: (role: string) => ({
+            seed: role,
+            body: t.Object({
+                sartre: t.Literal('Sartre')
+            })
+        })
+    })
+```
+
+<Note>
+Elysia limits macro extension depth to 16 levels to prevent infinite loops in both runtime and type inference.
+</Note>

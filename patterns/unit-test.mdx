@@ -1,0 +1,90 @@
+---
+title: "Unit testing Elysia apps with Eden and Bun Test"
+description: "Write unit tests for Elysia using Bun's built-in test runner and Eden Treaty for end-to-end type-safe request assertions without starting a real server."
+---
+
+Because Elysia implements the WinterTC (Web Interoperability) standard, you can test routes by passing standard `Request` objects directly to `app.handle()` without binding to a port. Bun ships with a built-in Jest-compatible test runner that makes this straightforward.
+
+## Basic test with Bun Test
+
+Create `test/index.test.ts` and use `bun:test` to drive assertions:
+
+```typescript
+// test/index.test.ts
+import { describe, expect, it } from 'bun:test'
+import { Elysia } from 'elysia'
+
+describe('Elysia', () => {
+    it('returns a response', async () => {
+        const app = new Elysia().get('/', () => 'hi')
+
+        const response = await app
+            .handle(new Request('http://localhost/'))
+            .then((res) => res.text())
+
+        expect(response).toBe('hi')
+    })
+})
+```
+
+Run the test suite with:
+
+```bash
+bun test
+```
+
+<Warning>
+The URL passed to `new Request(...)` must be a fully qualified URL. Partial paths are not valid.
+
+| URL                     | Valid |
+| ----------------------- | ----- |
+| `http://localhost/user` | ✅    |
+| `/user`                 | ❌    |
+</Warning>
+
+## End-to-end tests with Eden Treaty
+
+Eden Treaty provides a type-safe client that mirrors your Elysia router's shape. Using it in tests gives you auto-complete on paths and fully typed response bodies without starting a real HTTP server.
+
+<Steps>
+  <Step title="Install Eden">
+    ```bash
+    bun add @elysia/eden
+    ```
+  </Step>
+  <Step title="Create a treaty client from your app instance">
+    Pass the Elysia instance directly to `treaty()`. No URL or port is needed.
+
+    ```typescript
+    // test/index.test.ts
+    import { describe, expect, it } from 'bun:test'
+    import { Elysia } from 'elysia'
+    import { treaty } from '@elysia/eden'
+
+    const app = new Elysia().get('/hello', 'hi')
+
+    const api = treaty(app)
+    ```
+  </Step>
+  <Step title="Write type-safe assertions">
+    Call routes through the `api` object. The response `data` and `error` fields are automatically typed.
+
+    ```typescript
+    describe('Elysia', () => {
+        it('returns a response', async () => {
+            const { data, error } = await api.hello.get()
+
+            expect(data).toBe('hi')
+        })
+    })
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+Eden Treaty infers request and response types directly from the Elysia instance, so TypeScript will catch mismatched body shapes or unexpected status codes at compile time before tests even run.
+</Tip>
+
+## Using other test runners
+
+`app.handle()` accepts any standard `Request` and returns a standard `Response`, so you can use Jest or Vitest in place of Bun's test runner if your project requires it. The same request/response pattern applies regardless of the runner.

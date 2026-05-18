@@ -1,133 +1,94 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Elysia: Ergonomic TypeScript Framework for Bun"
+description: "Elysia is a TypeScript web framework for Bun with automatic type inference, end-to-end type safety via Eden, and multi-runtime WinterTC compliance."
 ---
 
-## Setting up
+Elysia is an ergonomic web framework for building backend servers with TypeScript. Designed with simplicity and type safety in mind, Elysia offers automatic type inference, a composable plugin system, and blazing-fast performance — all optimized for Bun while supporting Node.js, Deno, Cloudflare Workers, and more.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quick-start">
+    Get a working Elysia server running in under 5 minutes on Bun or Node.js.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="At a Glance" icon="eye" href="/at-glance">
+    See Elysia's core features — type inference, validation, OpenAPI, and Eden.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Essential Concepts" icon="book" href="/essential/route">
+    Learn routing, handlers, validation, lifecycle hooks, and plugins.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Eden Client" icon="link" href="/eden/overview">
+    Use Elysia's type-safe HTTP client with no code generation required.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why Elysia?
 
-Everything you need to create world-class documentation.
+Elysia combines the developer experience of a modern framework with the performance of a low-level runtime. It infers TypeScript types from your route definitions automatically — no decorators, no manual type annotations, no code generation.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="End-to-end type safety" icon="shield-check" href="/at-glance">
+    Types flow from server routes to client calls via Eden, similar to tRPC but without the abstraction.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Standard Schema support" icon="check-circle" href="/essential/validation">
+    Use Zod, Valibot, ArkType, or Effect Schema alongside Elysia's built-in TypeBox validator.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Plugin system" icon="puzzle-piece" href="/essential/plugin">
+    Compose reusable functionality with full lifecycle encapsulation and type propagation.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="OpenAPI built-in" icon="file-code" href="/plugins/openapi">
+    Generate accurate API documentation automatically from your TypeScript types and schemas.
   </Card>
-</Columns>
+</CardGroup>
 
-## Make your content agent ready
+## Get started
 
-Make your docs work for humans and AI agents alike.
+<Steps>
+  <Step title="Install Bun">
+    Elysia is optimized for Bun. Install it with a single command.
+    ```bash
+    curl -fsSL https://bun.sh/install | bash
+    ```
+  </Step>
+  <Step title="Create a new project">
+    Scaffold a new Elysia project using the official template.
+    ```bash
+    bun create elysia my-app
+    cd my-app
+    ```
+  </Step>
+  <Step title="Start the dev server">
+    Run the development server with hot reload.
+    ```bash
+    bun dev
+    ```
+    Your server is now running at [http://localhost:3000](http://localhost:3000).
+  </Step>
+  <Step title="Write your first route">
+    Open `src/index.ts` and add a route with full type safety.
+    ```typescript
+    import { Elysia, t } from 'elysia'
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
+    new Elysia()
+      .get('/hello/:name', ({ params: { name } }) => `Hello, ${name}!`, {
+        params: t.Object({ name: t.String() })
+      })
+      .listen(3000)
+    ```
+  </Step>
+</Steps>
 
-## Need inspiration?
+## Explore the ecosystem
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Official plugins" icon="plug" href="/plugins/overview">
+    CORS, JWT, static files, HTML, cron, OpenTelemetry, and more.
+  </Card>
+  <Card title="Runtime integrations" icon="server" href="/integrations/node">
+    Deploy to Node.js, Cloudflare Workers, Vercel, Deno, Next.js, Astro, and SvelteKit.
+  </Card>
+  <Card title="Patterns & best practices" icon="map" href="/patterns/macro">
+    Macros, WebSockets, error handling, cookies, testing, and deployment guides.
+  </Card>
+  <Card title="Tool integrations" icon="wrench" href="/integrations/drizzle">
+    Connect with Drizzle, Prisma, Better Auth, and the Vercel AI SDK.
+  </Card>
+</CardGroup>

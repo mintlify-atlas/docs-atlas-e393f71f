@@ -1,0 +1,45 @@
+---
+title: "Run Elysia on Deno runtime"
+description: "Run Elysia on Deno with no adapter by passing app.fetch to Deno.serve. Works out of the box thanks to WinterTC-compliant Web Standard Request/Response support."
+---
+
+Elysia is built on top of the Web Standard `Request`/`Response` API, which means it runs on Deno without any additional adapter. You simply pass `app.fetch` to `Deno.serve` instead of calling `.listen()`.
+
+<Steps>
+  <Step title="Create your Elysia app and pass it to Deno.serve">
+    Replace `.listen()` with `Deno.serve(app.fetch)`:
+
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    const app = new Elysia()
+      .get('/', () => 'Hello Elysia')
+
+    Deno.serve(app.fetch)
+    ```
+  </Step>
+
+  <Step title="Run the server with deno serve">
+    ```bash
+    deno serve --watch src/index.ts
+    ```
+
+    The `--watch` flag enables hot-reload on file changes.
+  </Step>
+</Steps>
+
+## Changing the port
+
+Pass a configuration object as the first argument to `Deno.serve` to set a custom port:
+
+```typescript
+Deno.serve({ port: 8787 }, app.fetch)
+```
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```

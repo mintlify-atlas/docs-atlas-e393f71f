@@ -1,0 +1,224 @@
+---
+title: "Elysia at a glance: types, validation, and Eden"
+description: "Explore Elysia's automatic type inference, runtime validation, Standard Schema support, OpenAPI generation, and end-to-end type safety with Eden."
+---
+
+Elysia is an ergonomic web framework for building backend servers with Bun. It is designed with simplicity and type safety in mind, offering a familiar API with extensive TypeScript support and strong performance characteristics.
+
+## Performance
+
+Building on Bun and extensive compile-time optimization, Elysia generates optimized code on the fly using static code analysis. It outperforms most web frameworks available today and matches the performance of Golang and Rust frameworks in independent benchmarks.
+
+| Framework     | Runtime | Average     | Plain text | Dynamic params | JSON body  |
+| ------------- | ------- | ----------- | ---------- | -------------- | ---------- |
+| elysia        | bun     | 255,574     | 313,073    | 241,891        | 211,758    |
+| hono          | bun     | 203,937     | 239,229    | 201,663        | 170,920    |
+| h3            | node    | 96,515      | 114,971    | 87,935         | 86,637     |
+| fastify       | node    | 60,322      | 71,150     | 62,060         | 47,756     |
+| express       | node    | 15,913      | 17,736     | 17,128         | 12,873     |
+
+Measured in requests/second on Debian 11, Intel i7-13700K, Bun 0.7.2.
+
+## TypeScript
+
+Elysia is designed to help you write less TypeScript. Its type system infers types from your code automatically, providing type safety at both runtime and compile time without requiring explicit annotations.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+  .get('/user/:id', ({ params: { id } }) => id)
+  .listen(3000)
+```
+
+The path parameter `id` is typed automatically — both at compile time and at runtime. The value replacing `:id` in a request is available as `params.id` with no manual type declaration needed.
+
+Elysia's goal is to let you focus on business logic. TypeScript is recommended but not required.
+
+## Type integrity
+
+To go further, Elysia provides **`Elysia.t`**, a schema builder backed by [TypeBox](https://github.com/sinclairzx81/typebox) that validates types at both runtime and compile time, creating a single source of truth for your data.
+
+The following example restricts the `id` parameter to numbers only:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+  .get('/user/:id', ({ params: { id } }) => id, {
+    params: t.Object({
+      id: t.Number()
+    })
+  })
+  .listen(3000)
+```
+
+A single `Elysia.t` schema serves four purposes simultaneously:
+
+- Runtime validation and coercion
+- TypeScript type inference
+- OpenAPI schema generation
+- Error responses on validation failure
+
+This eliminates the common pattern of maintaining a TypeScript interface alongside a separate runtime validator.
+
+## Standard Schema
+
+Elysia supports [Standard Schema](https://github.com/standard-schema/standard-schema), so you can use your preferred validation library alongside or instead of `Elysia.t`:
+
+- Zod
+- Valibot
+- ArkType
+- Effect Schema
+- Yup, Joi, and [more](https://github.com/standard-schema/standard-schema)
+
+You can mix libraries within a single route. Elysia infers the types from whichever schema library you use:
+
+```typescript
+import { Elysia } from 'elysia'
+import { z } from 'zod'
+import * as v from 'valibot'
+
+new Elysia()
+  .get('/id/:id', ({ params: { id }, query: { name } }) => id, {
+    params: z.object({
+      id: z.coerce.number()
+    }),
+    query: v.object({
+      name: v.literal('Lilith')
+    })
+  })
+  .listen(3000)
+```
+
+## OpenAPI
+
+Elysia adopts OpenAPI as a default standard. Because all schema metadata is already available at the framework level, generating API documentation requires a single plugin call:
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { openapi } from '@elysia/openapi'
+
+new Elysia()
+  .use(openapi())
+  .get('/user/:id', ({ params: { id } }) => id, {
+    params: t.Object({
+      id: t.Number()
+    })
+  })
+  .listen(3000)
+```
+
+The OpenAPI plugin produces a complete, browsable API documentation page with no additional configuration.
+
+### OpenAPI from types
+
+Elysia also supports generating OpenAPI schemas directly from TypeScript types with one line — a capability similar to FastAPI's automatic schema generation, but for TypeScript:
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { openapi, fromTypes } from '@elysia/openapi'
+
+export const app = new Elysia()
+  .use(openapi({
+    references: fromTypes()
+  }))
+  .get('/user/:id', ({ params: { id } }) => id, {
+    params: t.Object({
+      id: t.Number()
+    })
+  })
+  .listen(3000)
+```
+
+## End-to-end type safety
+
+With Elysia, type safety is not limited to the server. The **Eden** client library synchronizes your server types with your frontend automatically, similar to tRPC, but over standard HTTP and without code generation.
+
+Export your app type on the server:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+export const app = new Elysia()
+  .get('/user/:id', ({ params: { id } }) => id, {
+    params: t.Object({
+      id: t.Number()
+    })
+  })
+  .listen(3000)
+
+export type App = typeof app
+```
+
+Then use it from the client:
+
+```typescript
+import { treaty } from '@elysia/eden'
+import type { App } from './server'
+
+const app = treaty<App>('localhost:3000')
+
+const { data } = await app.user({ id: 617 }).get()
+```
+
+Eden gives you full autocomplete and type checking on route paths, parameters, request bodies, and responses — with zero code generation.
+
+## Type soundness
+
+Most end-to-end type-safe frameworks only model the happy path, leaving error handling outside the type system. Elysia infers all possible outcomes from lifecycle events and macros across your codebase, including error statuses returned from plugins:
+
+```typescript
+// server.ts
+import { Elysia, t } from 'elysia'
+
+const plugin = new Elysia()
+  .macro({
+    auth: {
+      cookie: t.Object({
+        session: t.String()
+      }),
+      beforeHandle({ cookie: { session }, status }) {
+        if (session.value !== 'valid')
+          return status(401)
+      }
+    }
+  })
+
+const app = new Elysia()
+  .use(plugin)
+  .get('/user/:id', ({ params: { id }, status }) => {
+    if (Math.random() > 0.1)
+      return status(420)
+
+    return id
+  }, {
+    auth: true,
+    params: t.Object({
+      id: t.Number()
+    })
+  })
+  .listen(3000)
+
+export type App = typeof app
+```
+
+On the client, the `error` type from Eden reflects every possible status code the route can return — including those added by plugins — without any manual annotation.
+
+## Platform agnostic
+
+Elysia is optimized for Bun but not limited to it. Being [WinterTC compliant](https://wintertc.org/) means Elysia servers run on:
+
+- Bun
+- Node.js
+- Deno
+- Cloudflare Workers
+- Vercel
+- Expo API routes
+- Next.js API routes
+- Astro API routes
+- SvelteKit, Nuxt, Tanstack Start, and more
+
+<Note>
+  See the integrations section in the sidebar for setup guides for each platform.
+</Note>

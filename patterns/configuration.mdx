@@ -1,0 +1,303 @@
+---
+title: "Elysia instance configuration options"
+description: "Explore all Elysia constructor options: prefix, adapter, normalization, AOT compilation, serve settings, TLS, WebSocket config, and sanitization helpers."
+---
+
+Elysia accepts a configuration object in its constructor that controls routing behavior, server settings, validation, and compilation. Most options have sensible defaults and only need to be set when you need to override them.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia({
+    prefix: '/v1',
+    normalize: true
+})
+```
+
+## Core options
+
+### name
+
+A human-readable identifier for this instance. Used in debug output and for [plugin deduplication](/essential/plugin).
+
+```typescript
+new Elysia({
+    name: 'service.thing'
+})
+```
+
+### prefix
+
+Prepend a path segment to every route defined on this instance.
+
+```typescript
+new Elysia({ prefix: '/v1' }).get('/name', 'elysia')
+// Route is accessible at /v1/name
+```
+
+### seed
+
+Supply a custom value for generating the instance checksum used in [plugin deduplication](/essential/plugin).
+
+```typescript
+new Elysia({
+    seed: {
+        value: 'service.thing'
+    }
+})
+```
+
+The value can be any type — string, number, object, or anything else.
+
+## Validation and normalization
+
+### normalize
+
+Control how Elysia handles properties that are not declared in the schema.
+
+```typescript
+new Elysia({
+    normalize: true
+})
+```
+
+| Value      | Behavior                                                            |
+| ---------- | ------------------------------------------------------------------- |
+| `true`     | Strip unknown fields using Elysia's exact mirror algorithm (default)|
+| `"typebox"`| Strip unknown fields using TypeBox's `Value.Clean`                  |
+| `false`    | Raise an error when undeclared fields are present                   |
+
+### sanitize
+
+Apply a transformation function to every `t.String` value during validation. Useful for HTML escaping input globally.
+
+```typescript
+new Elysia({
+    sanitize: (value) => Bun.escapeHTML(value)
+})
+```
+
+An array of functions is also accepted; they run in order.
+
+### allowUnsafeValidationDetails
+
+By default, Elysia omits validation field details from error responses in production to prevent schema leakage. Set this to `true` to include them.
+
+```typescript
+new Elysia({
+    allowUnsafeValidationDetails: true
+})
+```
+
+<Warning>
+Only enable `allowUnsafeValidationDetails` on internal or trusted APIs. Exposing schema field names and expected types in production can reveal implementation details to attackers.
+</Warning>
+
+### strictPath
+
+When `true`, routes match only the exact path string as defined. When `false` (default), a trailing slash is tolerated.
+
+```typescript
+// Matches /name and /name/
+new Elysia({ strictPath: false }).get('/name', 'elysia')
+
+// Matches only /name
+new Elysia({ strictPath: true }).get('/name', 'elysia')
+```
+
+### encodeSchema
+
+Run `t.Transform` encode functions before sending the response to the client. Defaults to `true`.
+
+```typescript
+new Elysia({ encodeSchema: true })
+```
+
+## Performance
+
+### aot
+
+Enable Ahead-of-Time compilation. When `true`, Elysia precompiles every route before the server starts. Defaults to `false`.
+
+```typescript
+new Elysia({
+    aot: true
+})
+```
+
+| Value   | Behavior                                        |
+| ------- | ----------------------------------------------- |
+| `true`  | Precompile all routes before starting           |
+| `false` | Disable JIT; faster startup, same runtime speed |
+
+### precompile
+
+Run JIT compilation on all routes before the server starts accepting requests. Recommended value is `false`.
+
+```typescript
+new Elysia({
+    precompile: true
+})
+```
+
+### nativeStaticResponse
+
+Use runtime-native optimizations for inline static responses. On Bun, this inserts static values into `Bun.serve.static`.
+
+```typescript
+new Elysia({
+    nativeStaticResponse: true
+}).get('/version', 1)
+
+// Equivalent to:
+// Bun.serve({ static: { '/version': new Response(1) } })
+```
+
+### systemRouter
+
+Use the runtime's built-in router when available. On Bun, this delegates to `Bun.serve.routes` and falls back to Elysia's own router.
+
+## Adapter
+
+### adapter
+
+Select the runtime adapter explicitly. Defaults to the appropriate adapter for the detected environment.
+
+```typescript
+import { Elysia } from 'elysia'
+import { BunAdapter } from 'elysia/adapter/bun'
+
+new Elysia({
+    adapter: BunAdapter
+})
+```
+
+## HTTP server
+
+### serve
+
+Customize the underlying HTTP server. This object extends [Bun's serve API](https://bun.sh/docs/api/http) and supports TLS via BoringSSL.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia({
+    serve: {
+        hostname: 'elysiajs.com',
+        tls: {
+            cert: Bun.file('cert.pem'),
+            key: Bun.file('key.pem')
+        }
+    }
+})
+```
+
+<Tabs>
+  <Tab title="Max body size">
+    ```typescript
+    new Elysia({
+        serve: {
+            maxRequestBodySize: 1024 * 1024 * 256 // 256 MB
+        }
+    })
+    ```
+    Default is 128 MB (`1024 * 1024 * 128`).
+  </Tab>
+  <Tab title="TLS / HTTPS">
+    ```typescript
+    import { Elysia, file } from 'elysia'
+
+    new Elysia({
+        serve: {
+            tls: {
+                cert: file('cert.pem'),
+                key: file('key.pem')
+            }
+        }
+    })
+    ```
+    Both `cert` and `key` are required to enable TLS.
+  </Tab>
+  <Tab title="Idle timeout">
+    ```typescript
+    new Elysia({
+        serve: {
+            idleTimeout: 60
+        }
+    })
+    ```
+    Default is 30 seconds.
+  </Tab>
+  <Tab title="Port and hostname">
+    ```typescript
+    new Elysia({
+        serve: {
+            port: 8080,
+            hostname: '0.0.0.0'
+        }
+    })
+    ```
+    Default port is `3000`; default hostname is `0.0.0.0`.
+  </Tab>
+  <Tab title="Unix socket">
+    ```typescript
+    new Elysia({
+        serve: {
+            unix: '/tmp/elysia.sock'
+        }
+    })
+    ```
+    Cannot be combined with `hostname` + `port`.
+  </Tab>
+</Tabs>
+
+### serve reference
+
+| Property                | Default                        | Description                                              |
+| ----------------------- | ------------------------------ | -------------------------------------------------------- |
+| `serve.hostname`        | `0.0.0.0`                      | Hostname the server listens on                           |
+| `serve.port`            | `3000`                         | Port the server listens on                               |
+| `serve.idleTimeout`     | `30`                           | Seconds before an idle connection is closed              |
+| `serve.maxRequestBodySize` | `134217728` (128 MB)        | Maximum request body size in bytes                       |
+| `serve.reusePort`       | `true`                         | Enable `SO_REUSEPORT` for multi-process load balancing   |
+| `serve.unix`            | —                              | Listen on a Unix socket instead of TCP                   |
+| `serve.tls`             | —                              | TLS configuration (cert, key, ca, passphrase, etc.)      |
+
+## WebSocket
+
+### websocket
+
+Override the global WebSocket configuration. Extends [Bun's WebSocket API](https://bun.sh/docs/api/websockets).
+
+```typescript
+new Elysia({
+    websocket: {
+        perMessageDeflate: true
+    }
+})
+```
+
+## OpenAPI
+
+### detail
+
+Attach an OpenAPI metadata object to every route on this instance.
+
+```typescript
+new Elysia({
+    detail: {
+        hide: true,
+        tags: ['elysia']
+    }
+})
+```
+
+### tags
+
+Shorthand for setting OpenAPI tags on all routes of the instance.
+
+```typescript
+new Elysia({
+    tags: ['elysia']
+})
+```

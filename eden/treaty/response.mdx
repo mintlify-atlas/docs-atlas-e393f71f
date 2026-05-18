@@ -1,0 +1,138 @@
+---
+title: "Eden Treaty responses: data, error, and status handling"
+description: "Every Eden Treaty call returns a typed object with data, error, status, and headers. Handle errors to unwrap the data type from nullable to concrete."
+---
+
+Every awaited Eden Treaty call resolves to an object with the following properties:
+
+| Property | Type | Description |
+|---|---|---|
+| `data` | `T \| null` | The response body when status is 2xx |
+| `error` | `E \| null` | The response body when status is >= 3xx |
+| `response` | `Response` | The raw Web Standard `Response` object |
+| `status` | `number` | The HTTP status code |
+| `headers` | `FetchRequestInit['headers']` | The response headers |
+
+Until you handle the error case, `data` is typed as `T | null`. Once you narrow the error away, TypeScript unwraps it to `T`.
+
+## Basic error handling
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .post('/user', ({ body: { name }, status }) => {
+        if (name === 'Otto') return status(400)
+        return name
+    }, {
+        body: t.Object({
+            name: t.String()
+        })
+    })
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+const submit = async (name: string) => {
+    const { data, error } = await api.user.post({ name })
+
+    // type: string | null
+    console.log(data)
+
+    if (error)
+        switch (error.status) {
+            case 400:
+                throw error.value
+
+            default:
+                throw error.value
+        }
+
+    // error is handled — type is now: string
+    return data
+}
+```
+
+<Tip>
+  When the server returns a status >= 300, `data` is always `null` and `error` contains the response value. When the status is 2xx, `error` is `null` and `data` contains the value.
+</Tip>
+
+## Stream responses
+
+Eden Treaty treats generator-based routes and Server-Sent Events as `AsyncGenerator`. Use a `for await` loop to consume chunks as they arrive.
+
+<Tabs>
+  <Tab title="Stream">
+    ```typescript
+    import { Elysia } from 'elysia'
+    import { treaty } from '@elysia/eden'
+
+    const app = new Elysia()
+        .get('/ok', function* () {
+            yield 1
+            yield 2
+            yield 3
+        })
+
+    const { data, error } = await treaty(app).ok.get()
+    if (error) throw error
+
+    for await (const chunk of data)
+        console.log(chunk)
+    ```
+  </Tab>
+  <Tab title="Server-Sent Events">
+    ```typescript
+    import { Elysia, sse } from 'elysia'
+    import { treaty } from '@elysia/eden'
+
+    const app = new Elysia()
+        .get('/ok', function* () {
+            yield sse({ event: 'message', data: 1 })
+            yield sse({ event: 'message', data: 2 })
+            yield sse({ event: 'end' })
+        })
+
+    const { data, error } = await treaty(app).ok.get()
+    if (error) throw error
+
+    for await (const chunk of data)
+        console.log(chunk)
+    ```
+  </Tab>
+</Tabs>
+
+## Utility types
+
+Use `Treaty.Data<T>` and `Treaty.Error<T>` to extract the response types statically without making a call. Pass either the method function or an awaited response object.
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { treaty, Treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .post('/user', ({ body: { name }, status }) => {
+        if (name === 'Otto') return status(400)
+        return name
+    }, {
+        body: t.Object({
+            name: t.String()
+        })
+    })
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+// Extract data type from the method reference
+type UserData = Treaty.Data<typeof api.user.post>
+
+// Or from an awaited response
+const response = await api.user.post({ name: 'Saltyaom' })
+type UserDataFromResponse = Treaty.Data<typeof response>
+
+// Extract error type
+type UserError = Treaty.Error<typeof api.user.post>
+```
+
+These utility types are useful when you want to type function parameters or return values that mirror an Eden Treaty call without calling the endpoint at the type level.

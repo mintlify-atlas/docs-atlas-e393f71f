@@ -1,0 +1,151 @@
+---
+title: "OpenTelemetry: instrument and trace Elysia apps"
+description: "Add distributed tracing to Elysia with @elysia/opentelemetry. Auto-collects spans from compatible libraries with configurable exporters and processors."
+---
+
+The `@elysia/opentelemetry` plugin integrates the OpenTelemetry SDK with your Elysia server. It automatically collects spans from any library compatible with the OpenTelemetry standard and applies parent–child span relationships to each request lifecycle.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/opentelemetry @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-proto
+```
+
+```bash npm
+npm install @elysia/opentelemetry @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-proto
+```
+
+```bash pnpm
+pnpm add @elysia/opentelemetry @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-proto
+```
+
+```bash yarn
+yarn add @elysia/opentelemetry @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-proto
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { opentelemetry } from '@elysia/opentelemetry'
+
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
+
+new Elysia()
+    .use(
+        opentelemetry({
+            spanProcessors: [
+                new BatchSpanProcessor(
+                    new OTLPTraceExporter()
+                )
+            ]
+        })
+    )
+    .listen(3000)
+```
+
+This sends traces to an OTLP-compatible collector (such as Jaeger, Grafana Tempo, or the OpenTelemetry Collector) using the protobuf HTTP exporter.
+
+<Tip>
+  For usage patterns and utilities — such as creating custom spans and accessing the active trace context — use the `getTracer` and `record` utilities exported from `@elysia/opentelemetry`.
+</Tip>
+
+## Configuration
+
+The plugin extends the OpenTelemetry Node SDK options. All fields are optional.
+
+### `spanProcessors`
+
+An array of `SpanProcessor` instances to register with the tracer provider. Use `BatchSpanProcessor` with your chosen exporter for production:
+
+```typescript
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
+
+opentelemetry({
+    spanProcessors: [
+        new BatchSpanProcessor(new OTLPTraceExporter())
+    ]
+})
+```
+
+### `traceExporter`
+
+A `SpanExporter` instance. When provided, it is automatically wrapped with a `BatchSpanProcessor`. Use either `traceExporter` or `spanProcessors` — not both.
+
+If neither is configured, the plugin sets up a default OTLP HTTP/protobuf exporter with a `BatchSpanProcessor`.
+
+### `serviceName`
+
+A string identifying your service in traces. Appears as the service name in your tracing backend.
+
+### `instrumentations`
+
+**Default:** `getNodeAutoInstrumentations()`
+
+Configure which instrumentations are active. By default, all Node.js auto-instrumentations are enabled. Pass an array to enable specific instrumentations only:
+
+```typescript
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http'
+
+opentelemetry({
+    instrumentations: [new HttpInstrumentation()]
+})
+```
+
+### `resource`
+
+An `IResource` instance providing metadata about the service (e.g., service name, version, environment). Use this alongside `autoDetectResources` for full context.
+
+### `resourceDetectors`
+
+**Default:** `[envDetector, processDetector, hostDetector]`
+
+Array of resource detectors that run when `autoDetectResources` is `true`. You can also configure detectors via the `OTEL_NODE_RESOURCE_DETECTORS` environment variable:
+
+```bash
+export OTEL_NODE_RESOURCE_DETECTORS="env,host"
+```
+
+Accepted values: `env`, `host`, `os`, `process`, `serviceinstance`, `all`, `none`.
+
+### `autoDetectResources`
+
+**Default:** `true`
+
+When `true`, the SDK runs the configured resource detectors to populate resource attributes automatically.
+
+### `contextManager`
+
+**Default:** `AsyncHooksContextManager`
+
+Provide a custom context manager for propagating trace context across async operations.
+
+### `textMapPropagator`
+
+**Default:** `CompositePropagator` (W3C Trace Context + Baggage)
+
+Provide a custom propagator for injecting and extracting trace context from HTTP headers.
+
+### `metricReader`
+
+A `MetricReader` instance passed to the `MeterProvider` for metrics collection alongside tracing.
+
+### `views`
+
+An array of `View` instances passed to the `MeterProvider`. Use views to configure histogram bucket boundaries and other metric aggregation settings.
+
+### `sampler`
+
+**Default:** all traces sampled
+
+A custom `Sampler` to control which traces are recorded and exported. Useful for reducing trace volume in high-traffic production environments.
+
+### `spanLimits`
+
+Configuration for tracer parameters such as attribute count limits and event count limits per span.

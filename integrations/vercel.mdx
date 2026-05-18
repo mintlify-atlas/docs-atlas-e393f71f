@@ -1,0 +1,70 @@
+---
+title: "Deploy Elysia to Vercel Edge Functions"
+description: "Deploy Elysia to Vercel Functions with zero configuration. Supports Bun and Node.js runtimes, uses the Vercel CLI for local development and production deploys."
+---
+
+Vercel Functions support the Web Standard `Request`/`Response` API by default, so Elysia runs on Vercel without any additional configuration or adapters. You can use either the Bun or Node.js runtime depending on your deployment target.
+
+<Steps>
+  <Step title="Create and export your Elysia app">
+    In `src/index.ts`, define your Elysia server and export it as the default export.
+
+    ```typescript
+    import { Elysia, t } from 'elysia'
+
+    export default new Elysia()
+      .get('/', () => 'Hello Vercel Function')
+      .post('/', ({ body }) => body, {
+        body: t.Object({
+          name: t.String()
+        })
+      })
+    ```
+  </Step>
+
+  <Step title="Develop locally with the Vercel CLI">
+    ```bash
+    vc dev
+    ```
+  </Step>
+
+  <Step title="Deploy to Vercel">
+    ```bash
+    vc deploy
+    ```
+  </Step>
+</Steps>
+
+## Using Node.js
+
+To deploy with the Node.js runtime, set `"type": "module"` in your `package.json`:
+
+```json
+{
+  "name": "elysia-app",
+  "type": "module"
+}
+```
+
+## Using Bun
+
+To deploy with the Bun runtime, set the Bun version in `vercel.json`:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "bunVersion": "1.x"
+}
+```
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```
+
+<Note>
+  For additional configuration options, refer to the [Vercel documentation for Elysia](https://vercel.com/docs/frameworks/backend/elysia).
+</Note>

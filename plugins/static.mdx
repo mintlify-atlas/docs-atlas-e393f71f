@@ -1,0 +1,134 @@
+---
+title: "Static plugin: serve files and directories"
+description: "Serve static files and entire directories from your Elysia server. Configure the asset path, URL prefix, custom headers, and HTML fallback for SPA routing."
+---
+
+The `@elysia/static` plugin serves static files and folders from your Elysia server. By default it exposes the `public/` directory at the `/public` URL prefix.
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/static
+```
+
+```bash npm
+npm install @elysia/static
+```
+
+```bash pnpm
+pnpm add @elysia/static
+```
+
+```bash yarn
+yarn add @elysia/static
+```
+
+</CodeGroup>
+
+## Basic usage
+
+```typescript
+import { Elysia } from 'elysia'
+import { staticPlugin } from '@elysia/static'
+
+new Elysia()
+    .use(staticPlugin())
+    .listen(3000)
+```
+
+Given this project structure:
+
+```
+├── src/
+│   └── index.ts
+└── public/
+    ├── takodachi.png
+    └── nested/
+        └── takodachi.png
+```
+
+The plugin registers these paths:
+
+- `/public/takodachi.png`
+- `/public/nested/takodachi.png`
+
+## Configuration
+
+### `assets`
+
+**Default:** `'public'`
+
+Path to the local directory to expose as static files.
+
+### `prefix`
+
+**Default:** `'/public'`
+
+URL prefix under which static files are served.
+
+```typescript
+// Serve files from ./dist at /static
+staticPlugin({
+    assets: 'dist',
+    prefix: '/static'
+})
+```
+
+### `ignorePatterns`
+
+**Default:** `[]`
+
+List of file patterns to exclude from being served.
+
+### `headers`
+
+**Default:** `{}`
+
+Custom response headers applied to every static file response:
+
+```typescript
+staticPlugin({
+    headers: {
+        'Cache-Control': 'public, max-age=31536000'
+    }
+})
+```
+
+### `indexHTML`
+
+**Default:** `false`
+
+When `true`, the `index.html` file from the static directory is served for any request that doesn't match a route or an existing static file. Useful for single-page applications.
+
+```typescript
+staticPlugin({
+    assets: 'dist',
+    prefix: '/',
+    indexHTML: true
+})
+```
+
+### `staticLimit`
+
+**Default:** `1024`
+
+The maximum number of static file paths registered eagerly in the router. When the number of files exceeds this limit, additional paths are added lazily to reduce startup memory usage.
+
+### `alwaysStatic`
+
+**Default:** `false`
+
+When `true`, all static file paths are registered in the router at startup, ignoring `staticLimit`. Use this when you want predictable routing behavior and memory is not a concern.
+
+## Serving a single file
+
+For serving a single file rather than a directory, use the built-in `file` helper instead of the static plugin:
+
+```typescript
+import { Elysia, file } from 'elysia'
+
+new Elysia()
+    .get('/file', file('public/takodachi.png'))
+```

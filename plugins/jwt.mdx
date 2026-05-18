@@ -1,0 +1,191 @@
+---
+title: "JWT plugin: sign and verify JSON Web Tokens"
+description: "Add JWT authentication to Elysia handlers. Sign tokens with jwt.sign(), verify with jwt.verify(), and configure the algorithm, expiry, and standard claims."
+---
+
+The `@elysia/jwt` plugin adds JWT support to Elysia handlers. It injects a `jwt` object into the handler context that exposes `sign` and `verify` methods, built on top of [jose](https://github.com/panva/jose).
+
+## Installation
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/jwt
+```
+
+```bash npm
+npm install @elysia/jwt
+```
+
+```bash pnpm
+pnpm add @elysia/jwt
+```
+
+```bash yarn
+yarn add @elysia/jwt
+```
+
+</CodeGroup>
+
+## Basic usage
+
+<Tabs>
+  <Tab title="Cookie-based">
+
+```typescript
+import { Elysia } from 'elysia'
+import { jwt } from '@elysia/jwt'
+
+const app = new Elysia()
+    .use(
+        jwt({
+            name: 'jwt',
+            secret: 'Fischl von Luftschloss Narfidort'
+        })
+    )
+    .get('/sign/:name', async ({ jwt, params: { name }, cookie: { auth } }) => {
+        const value = await jwt.sign({ name })
+
+        auth.set({
+            value,
+            httpOnly: true,
+            maxAge: 7 * 86400,
+            path: '/profile',
+        })
+
+        return `Sign in as ${value}`
+    })
+    .get('/profile', async ({ jwt, status, cookie: { auth } }) => {
+        const profile = await jwt.verify(auth.value)
+
+        if (!profile)
+            return status(401, 'Unauthorized')
+
+        return `Hello ${profile.name}`
+    })
+    .listen(3000)
+```
+
+  </Tab>
+  <Tab title="Header-based">
+
+```typescript
+import { Elysia } from 'elysia'
+import { jwt } from '@elysia/jwt'
+
+const app = new Elysia()
+    .use(
+        jwt({
+            name: 'jwt',
+            secret: 'Fischl von Luftschloss Narfidort'
+        })
+    )
+    .get('/sign/:name', ({ jwt, params: { name } }) => {
+        return jwt.sign({ name })
+    })
+    .get('/profile', async ({ jwt, status, headers: { authorization } }) => {
+        const profile = await jwt.verify(authorization)
+
+        if (!profile)
+            return status(401, 'Unauthorized')
+
+        return `Hello ${profile.name}`
+    })
+    .listen(3000)
+```
+
+  </Tab>
+</Tabs>
+
+## Handler values
+
+The plugin adds a `jwt` object to the handler context under the name specified in the `name` config option.
+
+### `jwt.sign(payload)`
+
+Signs a JWT payload and returns a token string.
+
+```typescript
+sign: (payload: JWTPayloadSpec) => Promise<string>
+```
+
+### `jwt.verify(token)`
+
+Verifies a token against the configured secret. Returns the decoded payload on success, or `false` if verification fails.
+
+```typescript
+verify: (token: string) => Promise<JWTPayloadSpec | false>
+```
+
+## Configuration
+
+The plugin extends config options from [jose](https://github.com/panva/jose).
+
+### `name`
+
+The property name under which the `jwt` object is injected into the handler context. Use different names to register multiple JWT instances with different secrets or algorithms in the same app:
+
+```typescript
+app
+    .use(
+        jwt({
+            name: 'myJWTNamespace',
+            secret: process.env.JWT_SECRETS!
+        })
+    )
+    .get('/sign/:name', ({ myJWTNamespace, params }) => {
+        return myJWTNamespace.sign(params)
+    })
+```
+
+### `secret`
+
+The private key used to sign and verify JWT payloads.
+
+### `schema`
+
+A TypeBox schema for strict type validation of the JWT payload.
+
+### `alg`
+
+**Default:** `'HS256'`
+
+The signing algorithm. Supported values from jose:
+
+`HS256` `HS384` `HS512` `PS256` `PS384` `PS512` `RS256` `RS384` `RS512` `ES256` `ES256K` `ES384` `ES512` `EdDSA`
+
+### `exp`
+
+The expiration time for signed tokens. Accepts a time string such as `'7d'`, `'2h'`, or `'30m'`.
+
+### Setting an expiration date
+
+```typescript
+const app = new Elysia()
+    .use(
+        jwt({
+            name: 'jwt',
+            secret: 'kunikuzushi',
+            exp: '7d'
+        })
+    )
+    .get('/sign/:name', async ({ jwt, params }) => jwt.sign(params))
+```
+
+### Standard JWT claims
+
+All standard [RFC7519](https://www.rfc-editor.org/rfc/rfc7519) claims are supported as config options and as payload fields:
+
+| Claim | Description |
+|-------|-------------|
+| `iss` | Issuer — identifies who issued the JWT |
+| `sub` | Subject — identifies the principal of the JWT |
+| `aud` | Audience — recipients the JWT is intended for |
+| `exp` | Expiration time |
+| `nbf` | Not before — earliest time to accept the token |
+| `iat` | Issued at |
+| `jti` | JWT ID — unique identifier for the token |
+
+<Warning>
+  Keep your `secret` in an environment variable. Never hard-code secrets in source code.
+</Warning>

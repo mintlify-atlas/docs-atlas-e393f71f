@@ -1,0 +1,107 @@
+---
+title: "Run Elysia on Node.js with the Node adapter"
+description: "Use the official Node adapter to run your Elysia app on Node.js with hot-reload support via tsx and a production-ready build setup."
+---
+
+Elysia provides a runtime adapter system that lets you run the same application code across multiple JavaScript runtimes. The Node adapter bridges Elysia's Web Standard internals to Node.js HTTP, so you can deploy to any Node.js-compatible environment without rewriting your application.
+
+<Steps>
+  <Step title="Install Elysia and the Node adapter">
+    <CodeGroup>
+
+    ```bash bun
+    bun add elysia @elysia/node
+    ```
+
+    ```bash pnpm
+    pnpm add elysia @elysia/node
+    ```
+
+    ```bash npm
+    npm install elysia @elysia/node
+    ```
+
+    ```bash yarn
+    yarn add elysia @elysia/node
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Apply the adapter to your Elysia instance">
+    Import `node` from `@elysia/node` and pass it as the `adapter` option when constructing your app.
+
+    ```typescript
+    import { Elysia } from 'elysia'
+    import { node } from '@elysia/node'
+
+    const app = new Elysia({ adapter: node() })
+      .get('/', () => 'Hello Elysia')
+      .listen(3000)
+    ```
+  </Step>
+
+  <Step title="(Optional) Add tsx for development hot-reload">
+    Install `tsx`, `@types/node`, and `typescript` as dev dependencies for a development experience similar to `bun dev`.
+
+    <CodeGroup>
+
+    ```bash bun
+    bun add -d tsx @types/node typescript
+    ```
+
+    ```bash pnpm
+    pnpm add -D tsx @types/node typescript
+    ```
+
+    ```bash npm
+    npm install --save-dev tsx @types/node typescript
+    ```
+
+    ```bash yarn
+    yarn add -D tsx @types/node typescript
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Add scripts to package.json">
+    ```json
+    {
+      "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "build": "tsc src/index.ts --outDir dist",
+        "start": "NODE_ENV=production node dist/index.js"
+      }
+    }
+    ```
+
+    - **dev** — Start with auto-reload on code changes.
+    - **build** — Compile TypeScript for production.
+    - **start** — Run the compiled production server.
+  </Step>
+
+  <Step title="Initialize TypeScript with strict mode">
+    ```bash
+    tsc --init
+    ```
+
+    Then set `strict` to `true` in the generated `tsconfig.json`:
+
+    ```json
+    {
+      "compilerOptions": {
+        "strict": true
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## pnpm peer dependencies
+
+If you use pnpm, peer dependencies are not installed automatically. Install them manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```

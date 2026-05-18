@@ -1,0 +1,386 @@
+---
+title: "Lifecycle hooks: intercept and transform requests"
+description: "Learn Elysia's full request lifecycle — from onRequest through parse, transform, beforeHandle, handle, afterHandle, and onError — and how to use hooks."
+---
+
+Instead of a single sequential flow, Elysia splits request handling into **lifecycle events**: discrete stages that each have a single responsibility. You attach functions called **hooks** to these events to intercept, transform, or short-circuit the pipeline.
+
+```
+onRequest → parse → transform → beforeHandle → handle → afterHandle → mapResponse → onError → afterResponse
+```
+
+A hook receives the same **context** object as a route handler, so you can read `body`, `params`, `headers`, `cookie`, and respond with `status()` just as you would in a normal handler.
+
+## Hook types
+
+There are two ways to attach a hook:
+
+<CardGroup cols={2}>
+  <Card title="Local hook" icon="lock" href="#local-hook">
+    Applies to a single route only. Inlined in the route definition.
+  </Card>
+  <Card title="Interceptor hook" icon="globe" href="#interceptor-hook">
+    Applies to every route registered after the hook on the same instance.
+  </Card>
+</CardGroup>
+
+### Local hook
+
+Provide the hook as a property on the route's options object.
+
+```typescript
+import { Elysia } from 'elysia'
+import { isHtml } from '@elysia/html'
+
+new Elysia()
+    .get('/', () => '<h1>Hello World</h1>', {
+        afterHandle({ responseValue, set }) {
+            if (isHtml(responseValue))
+                set.headers['Content-Type'] = 'text/html; charset=utf8'
+        }
+    })
+    .get('/hi', () => '<h1>Hello World</h1>') // plain text
+    .listen(3000)
+```
+
+### Interceptor hook
+
+Call `.on<EventName>()` to register a hook that applies to all routes defined **after** it on the current instance.
+
+```typescript
+import { Elysia } from 'elysia'
+import { isHtml } from '@elysia/html'
+
+new Elysia()
+    .get('/none', () => '<h1>Hello World</h1>') // plain text
+    .onAfterHandle(({ responseValue, set }) => {
+        if (isHtml(responseValue))
+            set.headers['Content-Type'] = 'text/html; charset=utf8'
+    })
+    .get('/', () => '<h1>Hello World</h1>')     // text/html
+    .get('/hi', () => '<h1>Hello World</h1>')    // text/html
+    .listen(3000)
+```
+
+## Order of registration
+
+Hooks only apply to routes registered **after** them. Registration order determines scope.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .onBeforeHandle(() => console.log('1')) // applies to /
+    .get('/', () => 'hi')
+    .onBeforeHandle(() => console.log('2')) // does NOT apply to /
+    .listen(3000)
+// logs: 1
+```
+
+The same rule applies when composing plugins with `.use()`.
+
+<Note>
+  `onRequest` is the only exception — because it fires before route matching, it is always a global event.
+</Note>
+
+## Lifecycle events
+
+### onRequest
+
+The first event fired for every incoming request. It receives a minimal `PreContext` (no derived values yet) and is the right place for:
+
+- Rate limiting and IP/region locks
+- Analytics
+- Adding custom response headers (e.g. CORS)
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .use(rateLimiter)
+    .onRequest(({ rateLimiter, ip, status }) => {
+        if (rateLimiter.check(ip)) return status(420, 'Enhance your calm')
+    })
+    .get('/', () => 'hi')
+    .listen(3000)
+```
+
+Returning a value from `onRequest` short-circuits the rest of the lifecycle.
+
+### parse
+
+The body-parsing stage. Elysia selects the right parser automatically based on the declared `body` schema:
+
+| Schema type | Content-Type assumed |
+| ----------- | -------------------- |
+| `t.Object` | `application/json` |
+| `t.Object` with `t.File` | `multipart/form-data` |
+| `t.URLEncoded` | `application/x-www-form-urlencoded` |
+| Other primitives | `text/plain` |
+
+You can override the auto-selected parser with the `parse` option:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia().post('/', ({ body }) => body, {
+    parse: 'json'
+})
+```
+
+Use `parse: 'none'` when handing the raw request to a third-party library that parses the body itself (e.g. tRPC, oRPC):
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .post('/', ({ request }) => library.handle(request), {
+        parse: 'none'
+    })
+```
+
+Register a custom parser with `.parser()`:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .parser('custom', ({ request, contentType }) => {
+        if (contentType === 'application/elysia') return request.text()
+    })
+    .post('/', ({ body }) => body, {
+        parse: ['custom', 'json']
+    })
+```
+
+### transform
+
+Runs just **before validation**, designed to mutate the context to conform to your schema.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .get('/id/:id', ({ params: { id } }) => id, {
+        params: t.Object({ id: t.Number() }),
+        transform({ params }) {
+            const id = +params.id
+            if (!Number.isNaN(id)) params.id = id
+        }
+    })
+    .listen(3000)
+```
+
+`derive` is a companion to `transform` that lets you append typed properties to the context from request data.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .derive(({ headers }) => {
+        const auth = headers['Authorization']
+        return {
+            bearer: auth?.startsWith('Bearer ') ? auth.slice(7) : null
+        }
+    })
+    .get('/', ({ bearer }) => bearer)
+```
+
+### beforeHandle
+
+Runs after validation but **before** the route handler. Return a value to skip the handler entirely — ideal for authentication checks.
+
+```typescript
+import { Elysia } from 'elysia'
+import { validateSession } from './user'
+
+new Elysia()
+    .get('/', () => 'hi', {
+        beforeHandle({ cookie: { session }, status }) {
+            if (!validateSession(session.value)) return status(401)
+        }
+    })
+    .listen(3000)
+```
+
+Apply the same check to multiple routes with `guard`:
+
+```typescript
+import { Elysia } from 'elysia'
+import { signUp, signIn, validateSession, isUserExists } from './user'
+
+new Elysia()
+    .guard(
+        {
+            beforeHandle({ cookie: { session }, status }) {
+                if (!validateSession(session.value)) return status(401)
+            }
+        },
+        (app) =>
+            app
+                .get('/user/:id', ({ body }) => signUp(body))
+                .post('/profile', ({ body }) => signIn(body), {
+                    beforeHandle: isUserExists
+                })
+    )
+    .get('/', () => 'hi')
+    .listen(3000)
+```
+
+`resolve` runs in the same queue as `beforeHandle` but appends typed values to the context **after** validation — safer than `derive`.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .guard(
+        {
+            headers: t.Object({
+                authorization: t.TemplateLiteral('Bearer ${string}')
+            })
+        },
+        (app) =>
+            app
+                .resolve(({ headers: { authorization } }) => ({
+                    bearer: authorization.split(' ')[1]
+                }))
+                .get('/', ({ bearer }) => bearer)
+    )
+    .listen(3000)
+```
+
+### afterHandle
+
+Runs after the route handler. Use it to inspect or transform the response value before it is sent.
+
+```typescript
+import { Elysia } from 'elysia'
+import { isHtml } from '@elysia/html'
+
+new Elysia()
+    .get('/', () => '<h1>Hello World</h1>', {
+        afterHandle({ response, set }) {
+            if (isHtml(response))
+                set.headers['content-type'] = 'text/html; charset=utf8'
+        }
+    })
+    .listen(3000)
+```
+
+Return a new value from `afterHandle` to replace the response. Returning `undefined` leaves the response unchanged. Unlike `beforeHandle`, returning a value does **not** stop iteration — all `afterHandle` hooks still run.
+
+### mapResponse
+
+Runs after `afterHandle`, designed for final response transformation such as compression.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const encoder = new TextEncoder()
+
+new Elysia()
+    .mapResponse(({ responseValue, set }) => {
+        const isJson = typeof responseValue === 'object'
+        const text = isJson
+            ? JSON.stringify(responseValue)
+            : (responseValue?.toString() ?? '')
+
+        set.headers['Content-Encoding'] = 'gzip'
+
+        return new Response(Bun.gzipSync(encoder.encode(text)), {
+            headers: {
+                'Content-Type': `${isJson ? 'application/json' : 'text/plain'}; charset=utf-8`
+            }
+        })
+    })
+    .get('/text', () => 'mapResponse')
+    .get('/json', () => ({ map: 'response' }))
+    .listen(3000)
+```
+
+### onError
+
+Called whenever an error is thrown inside any lifecycle event. Use it for custom error messages, logging, or fail-safe recovery.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .onError(({ error }) => {
+        return new Response(error.toString())
+    })
+    .get('/', () => {
+        throw new Error('Server is during maintenance')
+    })
+```
+
+#### Error codes
+
+| Code | Trigger |
+| ---- | ------- |
+| `NOT_FOUND` | No route matched |
+| `PARSE` | Body parsing failed |
+| `VALIDATION` | Schema validation failed |
+| `INTERNAL_SERVER_ERROR` | Unhandled server error |
+| `INVALID_COOKIE_SIGNATURE` | Cookie signature mismatch |
+| `INVALID_FILE_TYPE` | File type rejected |
+| `UNKNOWN` | Default for unclassified errors |
+| `number` | Any numeric HTTP status code |
+
+```typescript
+import { Elysia, NotFoundError } from 'elysia'
+
+new Elysia()
+    .onError(({ code, status }) => {
+        if (code === 'NOT_FOUND') return status(404, 'Not Found :(')
+    })
+    .post('/', () => {
+        throw new NotFoundError()
+    })
+    .listen(3000)
+```
+
+You can also scope error handling locally using the `error` property on a route:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', () => 'Hello', {
+        beforeHandle({ request: { headers }, error }) {
+            if (!isSignIn(headers)) throw error(401)
+        },
+        error() {
+            return 'Handled'
+        }
+    })
+    .listen(3000)
+```
+
+### afterResponse
+
+Fires after the response has been sent to the client. Use it for cleanup, logging, or analytics.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .onAfterResponse(({ responseValue }) => {
+        console.log('Response', performance.now(), responseValue)
+    })
+    .get('/', () => 'Hello')
+    .listen(3000)
+```
+
+Access the status and headers that were sent by reading `set`:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .onAfterResponse(({ set }) => {
+        console.log(set.status, set.headers)
+    })
+    .get('/', () => 'Hello')
+    .listen(3000)
+```

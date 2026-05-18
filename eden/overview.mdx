@@ -1,0 +1,129 @@
+---
+title: "Eden: end-to-end type-safe HTTP client for Elysia"
+description: "Connect your frontend to an Elysia server with full TypeScript type safety and auto-completion — no code generation required, under 2KB."
+---
+
+Eden is Elysia's built-in RPC-like client that synchronizes types between your server and client using only TypeScript's type inference. When you change a route, response type, or validation schema on the server, those changes are instantly reflected on the client with full auto-completion and compile-time error checking — without any build step or generated files.
+
+## How it works
+
+Export the `typeof` your Elysia app from the server, import it as a type-only import on the client, and pass it as a generic to the Eden client factory. TypeScript does the rest.
+
+```typescript
+// server.ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .get('/', 'hi')
+    .put('/nendoroid/:id', ({ body }) => body, {
+        body: t.Object({
+            name: t.String(),
+            from: t.String()
+        })
+    })
+    .listen(3000)
+
+export type App = typeof app
+```
+
+```typescript
+// client.ts
+import { treaty } from '@elysia/eden'
+import type { App } from './server'
+
+const app = treaty<App>('localhost:3000')
+
+// Full type safety and auto-completion on every call
+const { data: nendoroid, error } = await app.nendoroid({ id: 1895 }).put({
+    name: 'Skadi',
+    from: 'Arknights'
+})
+```
+
+No codegen. No schema export step. Just TypeScript.
+
+## Two client styles
+
+Eden ships two modules. Choose based on your preference:
+
+<CardGroup cols={2}>
+  <Card title="Eden Treaty" icon="shield-check" href="/eden/treaty/overview">
+    Proxy-based client where API paths become method chains: `app.user({ id }).get()`. Recommended for most projects. Supports WebSocket.
+  </Card>
+  <Card title="Eden Fetch" icon="bolt" href="/eden/installation">
+    Fetch-style client where you pass a path string and options object. Familiar to anyone who has used the Fetch API directly.
+  </Card>
+</CardGroup>
+
+### Eden Treaty (recommended)
+
+Eden Treaty maps your server's route tree to a JavaScript object. HTTP paths become dot-notation property chains, and dynamic segments become function calls.
+
+```typescript
+import { treaty } from '@elysia/eden'
+import type { App } from './server'
+
+const app = treaty<App>('localhost:3000')
+
+// GET /
+const { data } = await app.get()
+
+// GET /users
+const { data: users } = await app.users.get()
+
+// PUT /nendoroid/:id
+const { data: nendoroid, error } = await app.nendoroid({ id: 1895 }).put({
+    name: 'Skadi',
+    from: 'Arknights'
+})
+```
+
+### Eden Fetch
+
+Eden Fetch keeps the familiar `fetch('/path', options)` pattern while still providing full type inference on both the request and response.
+
+```typescript
+import { edenFetch } from '@elysia/eden'
+import type { App } from './server'
+
+const fetch = edenFetch<App>('http://localhost:3000')
+
+const { data } = await fetch('/nendoroid/:id', {
+    method: 'PUT',
+    params: { id: '1895' },
+    body: {
+        name: 'Skadi',
+        from: 'Arknights'
+    }
+})
+```
+
+<Note>
+  Eden Fetch does not support WebSocket. If you need real-time communication, use Eden Treaty. Install Eden Fetch the same way as Treaty — see the [installation guide](/eden/installation).
+</Note>
+
+## When to use each
+
+| Situation | Recommendation |
+|---|---|
+| New project | Eden Treaty |
+| Prefer fetch-style API | Eden Fetch |
+| Need WebSocket | Eden Treaty |
+| More than 500 routes in a single frontend | Eden Fetch (better TS performance at scale) |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/eden/installation">
+    Install `@elysia/eden`, export your app type, and make your first type-safe call.
+  </Card>
+  <Card title="Treaty overview" icon="map" href="/eden/treaty/overview">
+    Learn the proxy syntax, dynamic path parameters, and supported HTTP methods.
+  </Card>
+  <Card title="Treaty parameters" icon="sliders" href="/eden/treaty/parameters">
+    Pass body, query params, headers, and files with compile-time validation.
+  </Card>
+  <Card title="Testing" icon="flask-conical" href="/eden/test">
+    Write unit tests against your Elysia app with no running server needed.
+  </Card>
+</CardGroup>

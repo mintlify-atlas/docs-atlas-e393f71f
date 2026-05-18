@@ -1,0 +1,333 @@
+---
+title: "Plugins: compose and reuse Elysia functionality"
+description: "Create reusable Elysia instances, compose them with .use(), understand encapsulation, deduplication, scope levels, the factory pattern, and lazy loading."
+---
+
+A **plugin** is any Elysia instance that is registered into another instance with `.use()`. Every Elysia app is composed of plugins — each one can run standalone as its own server or be mounted into a larger app.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const plugin = new Elysia()
+    .decorate('plugin', 'hi')
+    .get('/plugin', ({ plugin }) => plugin)
+
+const app = new Elysia()
+    .use(plugin)
+    .get('/', ({ plugin }) => plugin)
+    .listen(3000)
+```
+
+When you register a plugin, Elysia merges its `state`, `decorate`, and models into the parent instance — and infers the combined TypeScript types automatically.
+
+<Note>
+  Lifecycle hooks are **not** inherited from plugins by default. See [Scope](#scope) below for how to control this.
+</Note>
+
+## Creating a plugin
+
+Create a new `Elysia()` instance, attach routes and decorators, and export it.
+
+```typescript
+// auth.ts
+import { Elysia } from 'elysia'
+
+export const auth = new Elysia()
+    .decorate('Auth', AuthService)
+    .model(Auth.models)
+    .get('/login', () => 'Login page')
+```
+
+```typescript
+// index.ts
+import { Elysia } from 'elysia'
+import { auth } from './auth'
+
+new Elysia()
+    .use(auth)
+    .get('/profile', ({ Auth }) => Auth.getProfile())
+    .listen(3000)
+```
+
+## Explicit dependencies
+
+Elysia is designed around **explicit dependencies**. If a route needs something from a plugin, you must declare that dependency with `.use()` before the route.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const auth = new Elysia()
+    .decorate('Auth', Auth)
+    .model(Auth.models)
+
+const main = new Elysia()
+    // ❌ 'Auth' is missing here
+    .get('/', ({ Auth }) => Auth.getProfile())
+    .use(auth) // declare the dependency
+    .get('/profile', ({ Auth }) => Auth.getProfile()) // ✅
+```
+
+This mirrors dependency injection: each instance declares what it needs, which makes dependency trees explicit, traceable, and modular.
+
+## Plugin deduplication
+
+By default, a plugin re-executes every time it is registered. To prevent a plugin from running more than once across a composed app, give it a unique `name`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const ip = new Elysia({ name: 'ip' })
+    .derive(
+        { as: 'global' },
+        ({ server, request }) => ({
+            ip: server?.requestIP(request)
+        })
+    )
+    .get('/ip', ({ ip }) => ip)
+
+const router1 = new Elysia().use(ip).get('/ip-1', ({ ip }) => ip)
+const router2 = new Elysia().use(ip).get('/ip-2', ({ ip }) => ip)
+
+// `ip` is only initialised once even though it appears in both routers
+const server = new Elysia()
+    .use(router1)
+    .use(router2)
+```
+
+When config affects the plugin's behaviour, pass it as `seed` so Elysia can generate a unique identifier per configuration:
+
+```typescript
+import { Elysia } from 'elysia'
+
+const plugin = (config) => new Elysia({
+    name: 'my-plugin',
+    seed: config,
+})
+    .get(`${config.prefix}/hi`, () => 'Hi')
+
+const app = new Elysia()
+    .use(plugin({ prefix: '/v2' }))
+```
+
+## Scope
+
+Lifecycle hooks defined in a plugin are **encapsulated** — they apply to the plugin's own routes and descendants only, not to the parent that imports it.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const profile = new Elysia()
+    .onBeforeHandle(({ cookie }) => {
+        throwIfNotSignIn(cookie)
+    })
+    .get('/profile', () => 'Hi there!')
+
+const app = new Elysia()
+    .use(profile)
+    .patch('/rename', ({ body }) => updateProfile(body)) // ⚠️ no sign-in check here
+```
+
+Think of it like JavaScript `export` — you must explicitly export a hook to make it available outside the module.
+
+### Scope levels
+
+| Level | Effect |
+| ----- | ------ |
+| `local` (default) | Current instance and its descendants only |
+| `scoped` | Parent, current instance, and descendants |
+| `global` | All instances that import the plugin |
+
+```typescript
+import { Elysia } from 'elysia'
+
+const child = new Elysia().get('/child', 'hi')
+
+const current = new Elysia()
+    .onBeforeHandle({ as: 'local' }, () => { console.log('hi') })
+    .use(child)
+    .get('/current', 'hi')
+
+const parent = new Elysia()
+    .use(current)
+    .get('/parent', 'hi')
+```
+
+| Scope setting | `/child` | `/current` | `/parent` |
+| ------------- | -------- | ---------- | --------- |
+| `local` | ✅ | ✅ | ❌ |
+| `scoped` | ✅ | ✅ | ✅ |
+| `global` | ✅ | ✅ | ✅ |
+
+### Exporting a lifecycle to parent instances
+
+There are three ways to lift a hook's scope:
+
+<Steps>
+  <Step title="Inline as — single hook">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    const plugin = new Elysia()
+        .derive({ as: 'scoped' }, () => ({ hi: 'ok' }))
+        .get('/child', ({ hi }) => hi)
+
+    const main = new Elysia()
+        .use(plugin)
+        .get('/parent', ({ hi }) => hi) // ✅
+    ```
+  </Step>
+  <Step title="Guard as — all hooks in a guard">
+    ```typescript
+    import { Elysia, t } from 'elysia'
+
+    const plugin = new Elysia()
+        .guard({
+            as: 'scoped',
+            response: t.String(),
+            beforeHandle() { console.log('ok') }
+        })
+        .get('/child', 'ok')
+
+    const main = new Elysia()
+        .use(plugin)
+        .get('/parent', 'hello')
+    ```
+  </Step>
+  <Step title="Instance as — all hooks in the instance">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    const plugin = new Elysia()
+        .derive(() => ({ hi: 'ok' }))
+        .get('/child', ({ hi }) => hi)
+        .as('scoped') // lift all hooks to scoped
+
+    const main = new Elysia()
+        .use(plugin)
+        .get('/parent', ({ hi }) => hi) // ✅
+    ```
+  </Step>
+</Steps>
+
+## Factory pattern (plugin as a function)
+
+Wrap your plugin in a function to accept configuration. This is the recommended pattern for reusable, parameterisable plugins.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const version = (version = 1) => new Elysia()
+    .get('/version', version)
+
+const app = new Elysia()
+    .use(version(1))
+    .listen(3000)
+```
+
+### Functional callback
+
+You can also pass a function directly to `.use()`. The function receives the parent instance and must return it. Unlike the factory pattern, properties are attached directly to the parent instance rather than being encapsulated.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const plugin = (app: Elysia) => app
+    .state('counter', 0)
+    .get('/plugin', () => 'Hi')
+
+const app = new Elysia()
+    .use(plugin)
+    .get('/counter', ({ store: { counter } }) => counter)
+    .listen(3000)
+```
+
+## Guard
+
+Use `.guard()` to apply validation schemas and hooks to a group of routes without repeating yourself.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .guard(
+        {
+            body: t.Object({
+                username: t.String(),
+                password: t.String()
+            })
+        },
+        (app) =>
+            app
+                .post('/sign-up', ({ body }) => signUp(body))
+                .post('/sign-in', ({ body }) => signIn(body), {
+                    beforeHandle: isUserExists
+                })
+    )
+    .get('/', 'hi')
+    .listen(3000)
+```
+
+Combine `.group()` and `.guard()` by passing the guard schema as the second argument to `.group()`:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .group(
+        '/v1',
+        { body: t.Literal('Rikuhachima Aru') },
+        (app) => app.post('/student', ({ body }) => body)
+    )
+    .listen(3000)
+```
+
+## Lazy loading
+
+Modules are eagerly loaded by default. For computationally heavy plugins, defer registration with an async plugin or dynamic `import()`.
+
+<CodeGroup>
+
+```typescript async plugin
+// plugin.ts
+import { Elysia, file } from 'elysia'
+import { loadAllFiles } from './files'
+
+export const loadStatic = async (app: Elysia) => {
+    const files = await loadAllFiles()
+    files.forEach((asset) => app.get(asset, file(asset)))
+    return app
+}
+```
+
+```typescript lazy import
+import { Elysia } from 'elysia'
+
+const app = new Elysia()
+    .use(import('./plugin'))
+```
+
+</CodeGroup>
+
+In tests, await `app.modules` to ensure all deferred and lazy-loaded modules have registered before making requests.
+
+```typescript
+import { describe, expect, it } from 'bun:test'
+import { Elysia } from 'elysia'
+
+describe('Modules', () => {
+    it('inline async', async () => {
+        const app = new Elysia()
+            .use(async (app) =>
+                app.get('/async', () => 'async')
+            )
+
+        await app.modules
+
+        const res = await app
+            .handle(new Request('http://localhost/async'))
+            .then((r) => r.text())
+
+        expect(res).toBe('async')
+    })
+})
+```

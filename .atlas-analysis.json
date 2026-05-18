@@ -1,29 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Elysia",
+  "projectType": "framework",
+  "projectName": "Elysia",
+  "projectDescription": "An ergonomic TypeScript web framework for Bun with end-to-end type safety, a plugin system, lifecycle hooks, and full WinterTC compliance.",
   "theme": "luma",
-  "colors": {
-    "primary": "#4e4e4e",
-    "light": "#cfcfcf",
-    "dark": "#4e4e4e"
-  },
-  "favicon": "https://media.brand.dev/9b68665e-e175-46b0-be08-54aeacee6802.svg",
-  "logo": {
-    "light": "https://media.brand.dev/fb7edc3c-c0a9-4ea2-a72e-cc813a26c79e.svg",
-    "dark": "https://media.brand.dev/fb7edc3c-c0a9-4ea2-a72e-cc813a26c79e.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/elysiajs/elysia"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/elysiajs/elysia",
-      "x": "https://twitter.com/elysiajs"
-    }
-  },
+  "primaryColor": "#4e4e4e",
+  "lightColor": "#cfcfcf",
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -114,5 +96,35 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "End-to-end type safety with automatic type inference",
+    "Optimized for Bun with WinterTC compliance for multi-runtime support",
+    "Plugin system with encapsulated lifecycle hooks",
+    "Standard Schema support (Zod, Valibot, ArkType, Effect)",
+    "Eden type-safe HTTP client (no code generation needed)",
+    "Automatic OpenAPI documentation generation",
+    "Macro system for reusable route configurations",
+    "WebSocket support with type-safe messaging"
+  ],
+  "publicApiSurface": [
+    "new Elysia()",
+    ".get() / .post() / .put() / .patch() / .delete() / .route()",
+    ".use(plugin)",
+    ".listen(port)",
+    ".macro()",
+    ".onBeforeHandle() / .onAfterHandle() / .onError()",
+    ".resolve() / .derive()",
+    "t (TypeBox schema builder)",
+    "treaty<App>() — Eden type-safe client",
+    "fetch (Eden fetch client)",
+    ".guard() / .scope()",
+    "file() / FileSystemRouter",
+    "@elysia/openapi — OpenAPI/Swagger plugin",
+    "@elysia/cors — CORS plugin",
+    "@elysia/jwt — JWT auth plugin",
+    "@elysia/eden — Type-safe client library",
+    "@elysia/static — Static file serving",
+    "@elysia/node — Node.js adapter"
+  ]
 }

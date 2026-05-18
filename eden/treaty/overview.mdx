@@ -1,0 +1,123 @@
+---
+title: "Eden Treaty: type-safe API calls with proxy objects"
+description: "Eden Treaty maps your Elysia server's routes to a JavaScript proxy object, letting you call endpoints as typed method chains with full auto-completion."
+---
+
+Eden Treaty represents your Elysia server as a tree of JavaScript objects that mirror the server's URL structure. Each segment of a URL path becomes a property, and each HTTP method becomes a callable function at the leaf. TypeScript infers the correct parameter and response types for every call automatically.
+
+## Basic usage
+
+Export your server type, then pass it to `treaty` along with your server's address:
+
+```typescript
+// server.ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .get('/hi', () => 'Hi Elysia')
+    .get('/id/:id', ({ params: { id } }) => id)
+    .post('/mirror', ({ body }) => body, {
+        body: t.Object({
+            id: t.Number(),
+            name: t.String()
+        })
+    })
+    .listen(3000)
+
+export type App = typeof app
+```
+
+```typescript
+// client.ts
+import { treaty } from '@elysia/eden'
+import type { App } from './server'
+
+const app = treaty<App>('localhost:3000')
+
+// response type: 'Hi Elysia'
+const { data, error } = await app.hi.get()
+```
+
+## Tree-like path syntax
+
+HTTP paths are hierarchical — each `/` separates a level. Eden Treaty translates that hierarchy into JavaScript dot notation.
+
+| Path | Treaty call |
+|---|---|
+| `/` | `.get()` |
+| `/hi` | `.hi.get()` |
+| `/deep/nested` | `.deep.nested.get()` |
+
+HTTP methods are appended at the end of the chain:
+
+| Path | Method | Treaty call |
+|---|---|---|
+| `/` | GET | `.get()` |
+| `/hi` | GET | `.hi.get()` |
+| `/deep/nested` | GET | `.deep.nested.get()` |
+| `/deep/nested` | POST | `.deep.nested.post()` |
+
+## Dynamic path parameters
+
+Static dot notation can't express named parameters like `/item/:name`. Instead, call the segment as a function and pass an object with the parameter name as the key:
+
+```typescript
+// ❌ unclear — what does 'skadi' represent?
+treaty.item['skadi'].get()
+
+// ✅ explicit — the parameter name is 'name'
+treaty.item({ name: 'Skadi' }).get()
+```
+
+You can chain further path segments after the dynamic parameter:
+
+| Path | Treaty call |
+|---|---|
+| `/item` | `.item` |
+| `/item/:name` | `.item({ name: 'Skadi' })` |
+| `/item/:name/id` | `.item({ name: 'Skadi' }).id` |
+
+A complete example with a server that uses dynamic paths:
+
+```typescript
+import { Elysia } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .get('/nendoroid/:id/name', ({ params: { id } }) => `Name for ${id}`)
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+// GET /nendoroid/1895/name
+const { data, error } = await api.nendoroid({ id: 1895 }).name.get()
+```
+
+## Supported HTTP methods
+
+Treaty exposes a method function for each standard HTTP verb:
+
+| Method | Treaty call |
+|---|---|
+| GET | `.get()` |
+| POST | `.post()` |
+| PUT | `.put()` |
+| PATCH | `.patch()` |
+| DELETE | `.delete()` |
+| HEAD | `.head()` |
+| OPTIONS | `.options()` |
+
+<Tip>
+  All method calls return a `Promise`. Always `await` them or chain `.then()` to get the response.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Parameters" icon="sliders" href="/eden/treaty/parameters">
+    Learn how to pass body, query params, headers, and file uploads.
+  </Card>
+  <Card title="Responses" icon="circle-check" href="/eden/treaty/response">
+    Handle typed responses, errors, and status code discrimination.
+  </Card>
+</CardGroup>

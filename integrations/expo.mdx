@@ -1,0 +1,110 @@
+---
+title: "Use Elysia in Expo Router API routes"
+description: "Add Elysia to Expo Router API routes for type-safe mobile and web backends. Export app.fetch per HTTP method and use Eden Treaty for end-to-end type safety."
+---
+
+Starting from Expo SDK 50 and App Router v3, Expo lets you define API routes directly inside your Expo project. Because Elysia is WinterTC-compliant, you can use it as the handler for those routes by exporting `app.fetch` under each HTTP method name.
+
+<Steps>
+  <Step title="Create a catch-all API route file">
+    Create `app/[...slugs]+api.ts` in your Expo project.
+  </Step>
+
+  <Step title="Define your Elysia server and export method handlers">
+    ```typescript
+    // app/[...slugs]+api.ts
+    import { Elysia, t } from 'elysia'
+
+    const app = new Elysia()
+      .get('/', 'hello Expo')
+      .post('/', ({ body }) => body, {
+        body: t.Object({
+          name: t.String()
+        })
+      })
+
+    export const GET = app.fetch
+    export const POST = app.fetch
+    ```
+  </Step>
+</Steps>
+
+## Route prefix
+
+If you place your Elysia server in a subdirectory (e.g. `app/api/[...slugs]+api.ts`), set the `prefix` option to match:
+
+```typescript
+// app/api/[...slugs]+api.ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia({ prefix: '/api' })
+  .get('/', 'Hello Expo')
+  .post('/', ({ body }) => body, {
+    body: t.Object({
+      name: t.String()
+    })
+  })
+
+export const GET = app.fetch
+export const POST = app.fetch
+```
+
+## End-to-end type safety with Eden
+
+Add [Eden Treaty](/eden/overview) for full type safety between your Expo app and backend.
+
+<Steps>
+  <Step title="Export the app type from your API route">
+    ```typescript
+    // app/[...slugs]+api.ts
+    import { Elysia } from 'elysia'
+
+    const app = new Elysia()
+      .get('/', 'Hello Expo')
+
+    export type app = typeof app
+
+    export const GET = app.fetch
+    export const POST = app.fetch
+    ```
+  </Step>
+
+  <Step title="Create a Treaty client">
+    ```typescript
+    // lib/eden.ts
+    import { treaty } from '@elysia/eden'
+    import type { app } from '../app/[...slugs]+api'
+
+    export const api = treaty<app>('localhost:3000/api')
+    ```
+  </Step>
+
+  <Step title="Use the client in your components">
+    ```tsx
+    // app/page.tsx
+    import { api } from '../lib/eden'
+
+    export default async function Page() {
+      const message = await api.get()
+
+      return <h1>Hello, {message}</h1>
+    }
+    ```
+  </Step>
+</Steps>
+
+## Deployment
+
+You can deploy your Expo app with Elysia using the [experimental Expo server runtime](https://docs.expo.dev/router/reference/api-routes/#deployment). Run `expo export` to produce an optimized build — the Elysia handler will be bundled at `dist/server/_expo/functions/[...slugs]+api.js`.
+
+<Note>
+  Expo functions are treated as Edge functions, not persistent servers. Running the function directly does not allocate a port. Use one of the supported Expo function adapters: [Express](https://docs.expo.dev/router/reference/api-routes/#express), [Netlify](https://docs.expo.dev/router/reference/api-routes/#netlify), or [Vercel](https://docs.expo.dev/router/reference/api-routes/#vercel).
+</Note>
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```

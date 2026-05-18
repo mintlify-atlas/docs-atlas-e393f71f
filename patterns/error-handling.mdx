@@ -1,0 +1,200 @@
+---
+title: "Error handling: onError, status codes, and custom errors"
+description: "Handle errors in Elysia with the onError lifecycle hook, typed custom error classes, validation messages, and status code helpers for clean HTTP responses."
+---
+
+Elysia provides a structured approach to error handling through the `onError` lifecycle hook, custom error classes, and the `status` helper. Understanding when to `throw` versus `return` a status, and how to define custom error types, makes your API responses predictable and fully type-safe.
+
+## Custom validation messages
+
+When declaring a schema, attach an `error` string to any field to return a specific message when that field fails validation.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia().get('/:id', ({ params: { id } }) => id, {
+    params: t.Object({
+        id: t.Number({
+            error: 'id must be a number'
+        })
+    })
+})
+```
+
+The raw string is returned as-is in the response body when validation fails.
+
+## Validation detail
+
+To include the full validation context (field name, expected type, received value) alongside your custom message, wrap the error string with `validationDetail`.
+
+```typescript
+import { Elysia, validationDetail, t } from 'elysia'
+
+new Elysia().get('/:id', ({ params: { id } }) => id, {
+    params: t.Object({
+        id: t.Number({
+            error: validationDetail('id must be a number')
+        })
+    })
+})
+```
+
+To apply `validationDetail` globally without adding it to every field, handle it in `onError`:
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .onError(({ error, code }) => {
+        if (code === 'VALIDATION') return error.detail(error.message)
+    })
+    .get('/:id', ({ params: { id } }) => id, {
+        params: t.Object({
+            id: t.Number({
+                error: 'id must be a number'
+            })
+        })
+    })
+    .listen(3000)
+```
+
+<Warning>
+By default, Elysia omits all validation details when `NODE_ENV` is `production` to prevent schema information leakage. Only the custom `message` field is preserved. Override this with `allowUnsafeValidationDetails: true` in the [Elysia configuration](/patterns/configuration).
+</Warning>
+
+## Custom errors
+
+Register custom error classes with `.error()` to get automatic code narrowing and auto-complete in `onError`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+class MyError extends Error {
+    constructor(public message: string) {
+        super(message)
+    }
+}
+
+new Elysia()
+    .error({
+        MyError
+    })
+    .onError(({ code, error }) => {
+        switch (code) {
+            case 'MyError':
+                // `error` is typed as MyError here
+                return error
+        }
+    })
+    .get('/:id', () => {
+        throw new MyError('Hello Error')
+    })
+```
+
+### Custom status code on error class
+
+Add a `status` property to your error class so Elysia uses it automatically as the HTTP response status.
+
+```typescript
+import { Elysia } from 'elysia'
+
+class MyError extends Error {
+    status = 418
+
+    constructor(public message: string) {
+        super(message)
+    }
+}
+```
+
+You can also set the status code explicitly in `onError` using the `status` helper:
+
+```typescript
+import { Elysia } from 'elysia'
+
+class MyError extends Error {
+    constructor(public message: string) {
+        super(message)
+    }
+}
+
+new Elysia()
+    .error({
+        MyError
+    })
+    .onError(({ code, error, status }) => {
+        switch (code) {
+            case 'MyError':
+                return status(418, error.message)
+        }
+    })
+    .get('/:id', () => {
+        throw new MyError('Hello Error')
+    })
+```
+
+### Custom response via toResponse
+
+Define a `toResponse()` method on your error class to produce a fully custom `Response` object when the error is thrown.
+
+```typescript
+import { Elysia } from 'elysia'
+
+class MyError extends Error {
+    status = 418
+
+    constructor(public message: string) {
+        super(message)
+    }
+
+    toResponse() {
+        return Response.json({
+            error: this.message,
+            code: this.status
+        }, {
+            status: 418
+        })
+    }
+}
+```
+
+## Throw vs. return
+
+The `status` helper can be either thrown or returned, and the behavior differs:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .onError(({ code, error, path }) => {
+        if (code === 418) return 'caught'
+    })
+    .get('/throw', ({ status }) => {
+        // Caught by onError
+        throw status(418)
+    })
+    .get('/return', ({ status }) => {
+        // NOT caught by onError
+        return status(418)
+    })
+```
+
+| Usage              | Caught by `onError` | Eden type inference |
+| ------------------ | ------------------- | ------------------- |
+| `throw status(n)`  | Yes                 | Correct             |
+| `return status(n)` | No                  | Correct             |
+
+<Tip>
+Prefer `return status(...)` when you want to send an error response without triggering `onError` middleware. Use `throw status(...)` when you need centralized error handling to process the response.
+</Tip>
+
+## Built-in error codes
+
+Elysia narrows the `code` parameter in `onError` to built-in types automatically:
+
+| Code          | Default status | Description                          |
+| ------------- | -------------- | ------------------------------------ |
+| `VALIDATION`  | 422            | Request failed schema validation     |
+| `NOT_FOUND`   | 404            | No route matched the request path    |
+| `PARSE`       | 400            | Request body could not be parsed     |
+| `UNKNOWN`     | 500            | Unregistered or unrecognized error   |

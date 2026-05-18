@@ -1,0 +1,81 @@
+---
+title: "Use Elysia in Astro API endpoints"
+description: "Add Elysia to Astro API endpoints using a catch-all slug route. Co-locate backend logic with your Astro pages via WinterTC-compliant Request and Response."
+---
+
+With [Astro Endpoints](https://docs.astro.build/en/core-concepts/endpoints/), you can run Elysia directly inside your Astro project. Because Elysia is WinterTC-compliant, it handles requests using the same Web Standard `Request`/`Response` API that Astro endpoints use.
+
+<Steps>
+  <Step title="Set output to server in astro.config.mjs">
+    ```javascript
+    // astro.config.mjs
+    import { defineConfig } from 'astro/config'
+
+    export default defineConfig({
+      output: 'server'
+    })
+    ```
+  </Step>
+
+  <Step title="Create a catch-all endpoint file">
+    Create `pages/[...slugs].ts` in your Astro project.
+  </Step>
+
+  <Step title="Define your Elysia server and export method handlers">
+    ```typescript
+    // pages/[...slugs].ts
+    import { Elysia, t } from 'elysia'
+
+    const app = new Elysia()
+      .get('/api', () => 'hi')
+      .post('/api', ({ body }) => body, {
+        body: t.Object({
+          name: t.String()
+        })
+      })
+
+    const handle = ({ request }: { request: Request }) => app.handle(request)
+
+    export const GET = handle
+    export const POST = handle
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  We recommend running [Astro on Bun](https://docs.astro.build/en/recipes/bun) since Elysia is designed to run on Bun. That said, Elysia will work with any Astro adapter thanks to WinterTC support.
+</Tip>
+
+## Route prefix
+
+If you place your endpoint in a subdirectory (e.g. `pages/api/[...slugs].ts`), set the `prefix` option on your Elysia server to match:
+
+```typescript
+// pages/api/[...slugs].ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia({ prefix: '/api' })
+  .get('/', () => 'hi')
+  .post('/', ({ body }) => body, {
+    body: t.Object({
+      name: t.String()
+    })
+  })
+
+const handle = ({ request }: { request: Request }) => app.handle(request)
+
+export const GET = handle
+export const POST = handle
+```
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```
+
+<Note>
+  See [Astro Endpoints](https://docs.astro.build/en/core-concepts/endpoints/) for further reference on the Astro endpoint API.
+</Note>

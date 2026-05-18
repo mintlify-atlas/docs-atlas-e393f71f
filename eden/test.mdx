@@ -1,0 +1,124 @@
+---
+title: "Testing with Eden Treaty and Bun Test"
+description: "Pass an Elysia app instance directly to treaty() to write integration tests without spinning up a server. Works with Bun's built-in test runner."
+---
+
+Eden Treaty accepts an Elysia app instance directly instead of a URL string. This means you can call your entire API in a test without binding to a port, starting a process, or mocking HTTP. Type safety and auto-completion work the same as in production.
+
+## Setup
+
+Create a test file at `test/index.test.ts`. Import your app, pass it to `treaty`, and use Bun's `describe`/`it`/`expect` helpers:
+
+```typescript
+// test/index.test.ts
+import { describe, expect, it } from 'bun:test'
+import { treaty } from '@elysia/eden'
+import { Elysia } from 'elysia'
+
+const app = new Elysia()
+    .get('/', () => 'hi')
+    .listen(3000)
+
+const api = treaty(app)
+
+describe('Elysia', () => {
+    it('return a response', async () => {
+        const { data } = await api.get()
+
+        expect(data).toBe('hi')
+    })
+})
+```
+
+Run the tests:
+
+```bash
+bun test
+```
+
+## Testing multiple routes
+
+You can test any route your app defines. Error responses are typed too, so you can assert on both the happy path and error cases:
+
+```typescript
+// test/index.test.ts
+import { describe, expect, it } from 'bun:test'
+import { treaty } from '@elysia/eden'
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .get('/id/:id', ({ params: { id } }) => id)
+    .post('/mirror', ({ body }) => body, {
+        body: t.Object({
+            id: t.Number(),
+            name: t.String()
+        })
+    })
+
+const api = treaty(app)
+
+describe('routes', () => {
+    it('returns a path param', async () => {
+        const { data } = await api.id({ id: 1895 }).get()
+        expect(data).toBe('1895')
+    })
+
+    it('mirrors the request body', async () => {
+        const { data } = await api.mirror.post({
+            id: 1895,
+            name: 'Skadi'
+        })
+        expect(data).toEqual({ id: 1895, name: 'Skadi' })
+    })
+})
+```
+
+## Testing error responses
+
+Destructure `error` alongside `data` to assert on error cases. The `error.status` value is typed to match the status codes your handler can return:
+
+```typescript
+import { describe, expect, it } from 'bun:test'
+import { treaty } from '@elysia/eden'
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia()
+    .post('/user', ({ body: { name }, status }) => {
+        if (name === 'Otto') return status(400)
+        return name
+    }, {
+        body: t.Object({
+            name: t.String()
+        })
+    })
+
+const api = treaty(app)
+
+describe('user endpoint', () => {
+    it('rejects the name Otto', async () => {
+        const { data, error } = await api.user.post({ name: 'Otto' })
+
+        expect(data).toBeNull()
+        expect(error?.status).toBe(400)
+    })
+
+    it('accepts a valid name', async () => {
+        const { data, error } = await api.user.post({ name: 'Skadi' })
+
+        expect(error).toBeNull()
+        expect(data).toBe('Skadi')
+    })
+})
+```
+
+<Note>
+  When passing an app instance to `treaty`, there is no need to call `.listen()`. Eden bypasses the HTTP layer entirely and calls your route handlers directly in memory.
+</Note>
+
+## Watch mode
+
+Run tests continuously as you edit your source files:
+
+```bash
+bun test --watch
+```

@@ -1,0 +1,295 @@
+---
+title: "Routing in Elysia: paths, params, and HTTP methods"
+description: "Define routes using HTTP verb methods, capture dynamic path parameters, use optional params and wildcards, and group routes under a shared prefix."
+---
+
+Elysia maps incoming requests to handlers using the request **path and HTTP method**. You register routes by calling the method that matches the HTTP verb you want to handle, passing a path and a function (or a literal value) to return as the response.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', 'hello')
+    .get('/hi', 'hi')
+    .listen(3000)
+```
+
+## Path types
+
+Elysia recognises three kinds of paths, and you can mix all three in the same instance.
+
+<CardGroup cols={3}>
+  <Card title="Static paths" icon="lock" href="#static-path">
+    Hardcoded strings that match exactly one URL.
+  </Card>
+  <Card title="Dynamic paths" icon="code" href="#dynamic-path">
+    Named segments (`:id`) that capture a value from the URL.
+  </Card>
+  <Card title="Wildcards" icon="asterisk" href="#wildcards">
+    An `*` segment that captures everything after a given prefix.
+  </Card>
+</CardGroup>
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/id/1', 'static path')
+    .get('/id/:id', 'dynamic path')
+    .get('/id/*', 'wildcard path')
+    .listen(3000)
+```
+
+### Static path
+
+A static path is a fixed string. Elysia resolves static paths before dynamic paths, so `/id/1` takes priority over `/id/:id`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/hello', 'hello')
+    .get('/hi', 'hi')
+    .listen(3000)
+```
+
+### Dynamic path
+
+A dynamic path uses a colon prefix (`:name`) to capture a URL segment into `context.params`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/id/:id', ({ params: { id } }) => id)
+    .listen(3000)
+```
+
+| Path | Response |
+| ---- | -------- |
+| `/id/1` | `1` |
+| `/id/anything` | `anything` |
+| `/id` | Not Found |
+| `/id/a/b` | Not Found |
+
+You can include as many parameters as you need — each one becomes a key on `params`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/id/:id/:name', ({ params: { id, name } }) => id + ' ' + name)
+    .listen(3000)
+```
+
+### Optional path parameters
+
+Append `?` to a parameter name to make it optional so that both `/id` and `/id/1` match the same handler.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/id/:id?', ({ params: { id } }) => `id ${id}`)
+    .listen(3000)
+```
+
+### Wildcards
+
+Use `*` to capture the rest of the URL, including slashes, into `params['*']`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/id/*', ({ params }) => params['*'])
+    .listen(3000)
+```
+
+## Path priority
+
+When multiple path patterns could match the same request, Elysia resolves them in this order:
+
+1. Static paths
+2. Dynamic paths
+3. Wildcards
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/id/1', 'static path')   // wins for /id/1
+    .get('/id/:id', 'dynamic path') // wins for /id/2
+    .get('/id/*', 'wildcard path')  // wins for /id/2/a
+    .listen(3000)
+```
+
+## HTTP methods
+
+Elysia exposes a dedicated method for each common HTTP verb.
+
+<Tabs>
+  <Tab title=".get()">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    new Elysia()
+        .get('/users', () => [])
+        .listen(3000)
+    ```
+    Retrieve data without side effects.
+  </Tab>
+  <Tab title=".post()">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    new Elysia()
+        .post('/users', ({ body }) => body)
+        .listen(3000)
+    ```
+    Submit a payload, often creating a resource.
+  </Tab>
+  <Tab title=".put()">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    new Elysia()
+        .put('/users/:id', ({ body }) => body)
+        .listen(3000)
+    ```
+    Replace a resource entirely.
+  </Tab>
+  <Tab title=".patch()">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    new Elysia()
+        .patch('/users/:id', ({ body }) => body)
+        .listen(3000)
+    ```
+    Apply partial modifications to a resource.
+  </Tab>
+  <Tab title=".delete()">
+    ```typescript
+    import { Elysia } from 'elysia'
+
+    new Elysia()
+        .delete('/users/:id', ({ params }) => params.id)
+        .listen(3000)
+    ```
+    Delete the specified resource.
+  </Tab>
+</Tabs>
+
+### Match any method
+
+`.all()` responds to every HTTP method for a path.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .all('/', 'hi')
+    .listen(3000)
+```
+
+### Custom HTTP methods
+
+Use `.route()` to handle non-standard verbs. Per [RFC 7231](https://www.rfc-editor.org/rfc/rfc7231#section-4.1), HTTP verbs are case-sensitive — use uppercase by convention.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/get', 'hello')
+    .post('/post', 'hi')
+    .route('M-SEARCH', '/m-search', 'connect')
+    .listen(3000)
+```
+
+`.route()` accepts: **method**, **path**, **handler**, and an optional **hook** object.
+
+## Route grouping
+
+When several routes share the same prefix, `.group()` keeps your code flat and removes duplication.
+
+```typescript
+import { Elysia } from 'elysia'
+
+// Without grouping
+new Elysia()
+    .post('/user/sign-in', 'Sign in')
+    .post('/user/sign-up', 'Sign up')
+    .post('/user/profile', 'Profile')
+
+// With grouping
+new Elysia()
+    .group('/user', (app) =>
+        app
+            .post('/sign-in', 'Sign in')
+            .post('/sign-up', 'Sign up')
+            .post('/profile', 'Profile')
+    )
+    .listen(3000)
+```
+
+Both produce identical routes:
+
+| Path | Response |
+| ---- | -------- |
+| `/user/sign-in` | Sign in |
+| `/user/sign-up` | Sign up |
+| `/user/profile` | Profile |
+
+`.group()` also accepts an optional guard object as its second argument to apply validation or hooks to every route in the group.
+
+```typescript
+import { Elysia, t } from 'elysia'
+
+new Elysia()
+    .group(
+        '/user',
+        { body: t.Literal('Rikuhachima Aru') },
+        (app) => app
+            .post('/sign-in', 'Sign in')
+            .post('/sign-up', 'Sign up')
+    )
+    .listen(3000)
+```
+
+### Prefix (plugin-based grouping)
+
+For larger codebases you can move a group of routes into a separate Elysia instance using the `prefix` constructor option, then compose it with `.use()`.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const users = new Elysia({ prefix: '/user' })
+    .post('/sign-in', 'Sign in')
+    .post('/sign-up', 'Sign up')
+    .post('/profile', 'Profile')
+
+new Elysia()
+    .use(users)
+    .get('/', 'hello world')
+    .listen(3000)
+```
+
+<Tip>
+  Prefix-based plugins are the idiomatic way to split a large Elysia app into modules. Each plugin is a fully independent Elysia instance that can be tested in isolation.
+</Tip>
+
+## Programmatic testing
+
+`Elysia.handle()` processes a real `Request` object, making it useful for unit tests without spinning up an HTTP server.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const app = new Elysia()
+    .get('/', 'hello')
+    .post('/hi', 'hi')
+    .listen(3000)
+
+app.handle(new Request('http://localhost/')).then(console.log)
+```

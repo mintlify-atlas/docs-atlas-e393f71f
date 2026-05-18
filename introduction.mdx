@@ -1,0 +1,69 @@
+---
+title: "Introduction to Elysia"
+description: "Elysia is an ergonomic TypeScript web framework built for Bun with automatic type inference, end-to-end type safety, and multi-runtime support."
+---
+
+Elysia is an ergonomic web framework for building backend servers with TypeScript. It is designed with simplicity and type safety in mind — the framework infers types from your route definitions automatically, so you can focus on business logic instead of writing boilerplate types.
+
+## What is Elysia?
+
+Elysia is optimized for [Bun](https://bun.sh), a fast JavaScript runtime, but it also runs on Node.js, Deno, Cloudflare Workers, and any WinterTC-compliant platform. It gives you a familiar, chainable API with deep TypeScript support baked in from the start.
+
+Here is a minimal Elysia server:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+  .get('/', 'Hello Elysia')
+  .get('/user/:id', ({ params: { id } }) => id)
+  .post('/form', ({ body }) => body)
+  .listen(3000)
+```
+
+Elysia automatically infers the type of `params.id` and `body` — no explicit type annotations required.
+
+## Who is Elysia for?
+
+Elysia is a good fit if you want to:
+
+- Build REST APIs or full-stack services with TypeScript
+- Share types between your frontend and backend without code generation
+- Generate OpenAPI documentation directly from your types
+- Deploy to Bun for maximum performance, or target Node.js and serverless platforms
+
+TypeScript is not required to use Elysia, but the framework is designed around it and provides its greatest benefits when TypeScript is enabled.
+
+## Key capabilities
+
+**Automatic type inference** — Elysia's type system derives route parameter, body, query, and response types from your code. You define a schema once and get runtime validation, TypeScript types, and OpenAPI schema from the same source.
+
+**End-to-end type safety** — The Eden client library lets your frontend call Elysia routes with full type safety and autocomplete, without any code generation step. It works similarly to tRPC but over standard HTTP.
+
+**Standard Schema support** — Alongside its built-in TypeBox-based validator (`Elysia.t`), Elysia supports Zod, Valibot, ArkType, Effect Schema, and other Standard Schema-compliant libraries.
+
+**OpenAPI out of the box** — Because Elysia tracks schema metadata, adding the OpenAPI plugin generates complete, accurate API documentation with a single line of code.
+
+**Plugin system with encapsulation** — Plugins compose cleanly. Lifecycle hooks and decorators are scoped to the instance they are registered on unless explicitly shared, preventing unintended side effects.
+
+**Platform agnostic** — Elysia's WinterTC compliance means the same code runs on Bun, Node.js, Deno, Cloudflare Workers, Vercel, and serverless framework integrations like Next.js, Astro, and SvelteKit.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Elysia at a glance" icon="eye" href="/at-glance">
+    A deeper look at type inference, validation, Standard Schema, OpenAPI, and Eden.
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quick-start">
+    Get a working server running on Bun or Node.js in under five minutes.
+  </Card>
+  <Card title="Routing and handlers" icon="map" href="/essential/route">
+    Learn how to define routes, path parameters, query strings, and response types.
+  </Card>
+  <Card title="Eden client" icon="link" href="/eden/overview">
+    Connect a frontend to your Elysia server with end-to-end type safety.
+  </Card>
+  <Card title="Official plugins" icon="plug" href="/plugins/overview">
+    Browse CORS, JWT, static files, OpenAPI, OpenTelemetry, and more.
+  </Card>
+</CardGroup>

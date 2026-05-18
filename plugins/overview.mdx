@@ -1,0 +1,74 @@
+---
+title: "Official Elysia plugins overview"
+description: "Elysia ships official plugins for auth, CORS, OpenAPI docs, static files, cron jobs, HTML, and more. Install any with bun add and register via .use()."
+---
+
+Elysia is designed to be modular and lightweight. Rather than bundling everything into the core, official plugins cover the most common patterns so you only include what your project actually needs. Each plugin is installed as a separate package and registered on your Elysia instance with `.use()`.
+
+## Installing plugins
+
+All official plugins follow the same installation pattern:
+
+<CodeGroup>
+
+```bash bun
+bun add @elysia/<plugin-name>
+```
+
+```bash npm
+npm install @elysia/<plugin-name>
+```
+
+```bash pnpm
+pnpm add @elysia/<plugin-name>
+```
+
+```bash yarn
+yarn add @elysia/<plugin-name>
+```
+
+</CodeGroup>
+
+Then register the plugin with `.use()`:
+
+```typescript
+import { Elysia } from 'elysia'
+import { cors } from '@elysia/cors'
+
+new Elysia()
+    .use(cors())
+    .listen(3000)
+```
+
+## Official plugins
+
+<CardGroup cols={2}>
+  <Card title="OpenAPI" icon="file-code" href="/plugins/openapi">
+    Auto-generate interactive API documentation from your TypeScript types and route definitions using Scalar or Swagger UI.
+  </Card>
+  <Card title="CORS" icon="shield" href="/plugins/cors">
+    Configure Cross-Origin Resource Sharing with fine-grained control over origins, methods, headers, and credentials.
+  </Card>
+  <Card title="JWT" icon="key" href="/plugins/jwt">
+    Sign and verify JSON Web Tokens in handlers. Supports multiple algorithms and integrates with cookies or headers.
+  </Card>
+  <Card title="Bearer" icon="lock" href="/plugins/bearer">
+    Extract the Bearer token from incoming Authorization headers and make it available in your route handlers.
+  </Card>
+  <Card title="Static" icon="folder-open" href="/plugins/static">
+    Serve static files and entire directories. Supports prefix configuration, custom headers, and index HTML fallback.
+  </Card>
+  <Card title="HTML" icon="code" href="/plugins/html">
+    Return JSX or raw HTML strings from handlers with automatic Content-Type headers and doctype injection.
+  </Card>
+  <Card title="Cron" icon="clock" href="/plugins/cron">
+    Schedule recurring background tasks using cron expressions. Access and stop jobs from route handlers via the store.
+  </Card>
+  <Card title="OpenTelemetry" icon="chart-line" href="/plugins/opentelemetry">
+    Instrument your Elysia app with distributed tracing. Automatically collects spans from compatible libraries.
+  </Card>
+</CardGroup>
+
+<Note>
+  Looking for community plugins? The [Elysia ecosystem](https://github.com/elysiajs/elysia) includes community-maintained plugins for OAuth2, rate limiting, logging, i18n, and many more use cases.
+</Note>

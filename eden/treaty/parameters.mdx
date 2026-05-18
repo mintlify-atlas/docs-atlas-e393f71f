@@ -1,0 +1,157 @@
+---
+title: "Eden Treaty parameters: body, query, and headers"
+description: "Pass request body, query strings, custom headers, and file uploads to Eden Treaty calls. Every parameter is validated by TypeScript at compile time."
+---
+
+Eden Treaty method calls accept up to two arguments. Both are typed based on the validation schema you defined on the server, so TypeScript will catch incorrect or missing fields before you run anything.
+
+## Argument structure
+
+For methods that accept a body (POST, PUT, PATCH, DELETE):
+
+1. **body** — the request body
+2. **options** — an optional object containing `query`, `headers`, and `fetch`
+
+For methods that do not accept a body (GET, HEAD):
+
+1. **options** — an optional object containing `query`, `headers`, and `fetch`
+
+## Body and options
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .post('/user', ({ body }) => body, {
+        body: t.Object({
+            name: t.String()
+        })
+    })
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+// body only
+api.user.post({
+    name: 'Elysia'
+})
+
+// body + options
+api.user.post({
+    name: 'Elysia'
+}, {
+    headers: {
+        authorization: 'Bearer 12345'
+    },
+    query: {
+        id: 2
+    }
+})
+```
+
+## GET and HEAD requests
+
+GET and HEAD requests have no body, so the first argument is the options object directly:
+
+```typescript
+import { Elysia } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .get('/hello', () => 'hi')
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+api.hello.get({
+    headers: {
+        hello: 'world'
+    }
+})
+```
+
+## Empty body with query params
+
+If you don't have a body but still need to pass `query` or `headers`, pass `null` or `undefined` as the first argument:
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .post('/user', () => 'hi', {
+        query: t.Object({
+            name: t.String()
+        })
+    })
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+api.user.post(null, {
+    query: {
+        name: 'Ely'
+    }
+})
+```
+
+## Fetch options
+
+Eden Treaty wraps the native Fetch API. Pass any valid `RequestInit` field via the `fetch` key in the options argument to control caching, abort signals, credentials, and so on:
+
+```typescript
+import { Elysia } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .get('/hello', () => 'hi')
+    .listen(3000)
+
+const api = treaty<typeof app>('localhost:3000')
+
+const controller = new AbortController()
+
+const cancelRequest = setTimeout(() => {
+    controller.abort()
+}, 5000)
+
+await api.hello.get({
+    fetch: {
+        signal: controller.signal
+    }
+})
+
+clearTimeout(cancelRequest)
+```
+
+## File uploads
+
+Pass a `File`, `File[]`, `FileList`, or `Blob` as a body field to upload files. Eden Treaty automatically sets `Content-Type: multipart/form-data`.
+
+```typescript
+import { Elysia, t } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .post('/image', ({ body: { image, title } }) => title, {
+        body: t.Object({
+            title: t.String(),
+            image: t.Files()
+        })
+    })
+    .listen(3000)
+
+export const api = treaty<typeof app>('localhost:3000')
+
+const images = document.getElementById('images') as HTMLInputElement
+
+const { data } = await api.image.post({
+    title: 'Misono Mika',
+    image: images.files!,
+})
+```
+
+<Note>
+  File upload types (`File`, `FileList`, `Blob`) are automatically detected. You do not need to construct a `FormData` object manually.
+</Note>

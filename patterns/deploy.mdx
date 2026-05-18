@@ -1,0 +1,263 @@
+---
+title: "Deploy Elysia to production environments"
+description: "Ship Elysia as a portable binary or bundled JS file, containerize with Docker, scale with cluster mode, and configure for Railway or other cloud platforms."
+---
+
+Elysia runs on Bun and can be shipped as a self-contained binary, a bundled JavaScript file, or a Docker image. Compiling before deployment typically reduces memory usage by 2–3× compared to running source files directly.
+
+## Cluster mode
+
+Elysia is single-threaded by default. To use all available CPU cores, fork multiple workers with Node's `cluster` module.
+
+<CodeGroup>
+
+```typescript src/index.ts
+import cluster from 'node:cluster'
+import os from 'node:os'
+import process from 'node:process'
+
+if (cluster.isPrimary) {
+    for (let i = 0; i < os.availableParallelism(); i++)
+        cluster.fork()
+} else {
+    await import('./server')
+    console.log(`Worker ${process.pid} started`)
+}
+```
+
+```typescript src/server.ts
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', () => 'Hello World!')
+    .listen(3000)
+```
+
+</CodeGroup>
+
+<Tip>
+Elysia on Bun sets `SO_REUSEPORT` by default, which lets multiple workers bind to the same port. This is Linux-only.
+</Tip>
+
+## Compile to binary
+
+Compiling to a self-contained binary produces a portable executable that does not require Bun to be installed on the target machine.
+
+```bash
+bun build \
+    --compile \
+    --minify-whitespace \
+    --minify-syntax \
+    --target bun \
+    --outfile server \
+    src/index.ts
+```
+
+Then run it directly:
+
+```bash
+./server
+```
+
+Each flag explained:
+
+| Flag                 | Purpose                                             |
+| -------------------- | --------------------------------------------------- |
+| `--compile`          | Compile TypeScript to a native binary               |
+| `--minify-whitespace`| Remove unnecessary whitespace                       |
+| `--minify-syntax`    | Reduce JavaScript syntax to decrease file size      |
+| `--target bun`       | Optimize the output for Bun's runtime               |
+| `--outfile server`   | Name the output binary `server`                     |
+
+### Cross-platform targets
+
+Add `--target` with a platform identifier to cross-compile for a different OS or architecture:
+
+```bash
+bun build \
+    --compile \
+    --minify-whitespace \
+    --minify-syntax \
+    --target bun-linux-x64 \
+    --outfile server \
+    src/index.ts
+```
+
+| Target                   | OS      | Architecture | libc  |
+| ------------------------ | ------- | ------------ | ----- |
+| `bun-linux-x64`          | Linux   | x64          | glibc |
+| `bun-linux-arm64`        | Linux   | arm64        | glibc |
+| `bun-linux-x64-musl`     | Linux   | x64          | musl  |
+| `bun-linux-arm64-musl`   | Linux   | arm64        | musl  |
+| `bun-windows-x64`        | Windows | x64          | —     |
+| `bun-darwin-x64`         | macOS   | x64          | —     |
+| `bun-darwin-arm64`       | macOS   | arm64        | —     |
+
+### Why not `--minify`?
+
+`--minify` renames functions to single characters. If you use [OpenTelemetry](/plugins/opentelemetry), this breaks tracing because OpenTelemetry relies on function names. Use `--minify-whitespace` and `--minify-syntax` instead.
+
+If you are not using OpenTelemetry, `--minify` is safe:
+
+```bash
+bun build \
+    --compile \
+    --minify \
+    --outfile server \
+    src/index.ts
+```
+
+### Linux permissions
+
+Some distributions require execute permission to be set before the binary can run:
+
+```bash
+chmod +x ./server
+./server
+```
+
+<Warning>
+If the binary fails with garbled (Chinese) characters, the machine does not support AVX2, which Bun requires. There is no known workaround.
+</Warning>
+
+## Compile to JavaScript
+
+If you cannot produce a binary (e.g., deploying to a Windows server), bundle to a single JavaScript file instead:
+
+```bash
+bun build \
+    --minify-whitespace \
+    --minify-syntax \
+    --outfile ./dist/index.js \
+    src/index.ts
+```
+
+Run it with:
+
+```bash
+NODE_ENV=production bun ./dist/index.js
+```
+
+## Docker
+
+Use a multi-stage Dockerfile: build the binary in the Bun image, then copy it into a minimal Distroless base image.
+
+```dockerfile
+FROM oven/bun AS build
+
+WORKDIR /app
+
+COPY package.json package.json
+COPY bun.lock bun.lock
+
+RUN bun install
+
+COPY ./src ./src
+
+ENV NODE_ENV=production
+
+RUN bun build \
+    --compile \
+    --minify-whitespace \
+    --minify-syntax \
+    --outfile server \
+    src/index.ts
+
+FROM gcr.io/distroless/base
+
+WORKDIR /app
+
+COPY --from=build /app/server server
+
+ENV NODE_ENV=production
+
+CMD ["./server"]
+
+EXPOSE 3000
+```
+
+### OpenTelemetry with Docker
+
+OpenTelemetry instruments libraries via monkey-patching `node_modules`. To keep instrumented packages available at runtime, exclude them from bundling with `--external`:
+
+```bash
+bun build --compile --external pg --outfile server src/index.ts
+```
+
+Then ensure production dependencies are installed on the server:
+
+```bash
+bun install --production
+```
+
+Declare instrumented packages as `dependencies` (not `devDependencies`) in `package.json`:
+
+```json
+{
+    "dependencies": {
+        "pg": "^8.15.6"
+    },
+    "devDependencies": {
+        "@elysia/opentelemetry": "^1.2.0",
+        "@opentelemetry/instrumentation-pg": "^0.52.0"
+    }
+}
+```
+
+### Monorepo with Docker
+
+When using Turborepo or a similar monorepo manager, place the Dockerfile inside the app directory and build from the repo root:
+
+```bash
+docker build -f apps/server/Dockerfile -t elysia-mono .
+```
+
+```dockerfile
+FROM oven/bun:1 AS build
+
+WORKDIR /app
+
+COPY package.json package.json
+COPY bun.lock bun.lock
+COPY /apps/server/package.json ./apps/server/package.json
+COPY /packages/config/package.json ./packages/config/package.json
+
+RUN bun install
+
+COPY /apps/server ./apps/server
+COPY /packages/config ./packages/config
+
+ENV NODE_ENV=production
+
+RUN bun build \
+    --compile \
+    --minify-whitespace \
+    --minify-syntax \
+    --outfile server \
+    src/index.ts
+
+FROM gcr.io/distroless/base
+
+WORKDIR /app
+
+COPY --from=build /app/server server
+
+ENV NODE_ENV=production
+
+CMD ["./server"]
+
+EXPOSE 3000
+```
+
+## Railway
+
+Railway assigns a random port to each deployment via the `PORT` environment variable. Update your server to read it:
+
+```typescript
+new Elysia()
+    .listen(process.env.PORT ?? 3000)
+```
+
+<Tip>
+Elysia sets the hostname to `0.0.0.0` by default, which is compatible with Railway's networking model.
+</Tip>

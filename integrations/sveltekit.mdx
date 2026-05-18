@@ -1,0 +1,66 @@
+---
+title: "Use Elysia in SvelteKit server endpoints"
+description: "Embed Elysia inside SvelteKit server routes using a catch-all slug file. Export a fallback handler to delegate all incoming HTTP requests to your Elysia app."
+---
+
+SvelteKit server routes expose a `request` object that conforms to the Web Standard API, making Elysia a natural fit. You define your Elysia server in a catch-all route file and export a `fallback` function that delegates requests to `app.handle`.
+
+<Steps>
+  <Step title="Create the catch-all server route file">
+    Create `src/routes/[...slugs]/+server.ts` in your SvelteKit project.
+  </Step>
+
+  <Step title="Define your Elysia server and export the fallback handler">
+    ```typescript
+    // src/routes/[...slugs]/+server.ts
+    import { Elysia, t } from 'elysia'
+
+    const app = new Elysia()
+      .get('/', 'hello SvelteKit')
+      .post('/', ({ body }) => body, {
+        body: t.Object({
+          name: t.String()
+        })
+      })
+
+    interface WithRequest {
+      request: Request
+    }
+
+    export const fallback = ({ request }: WithRequest) => app.handle(request)
+    ```
+  </Step>
+</Steps>
+
+## Route prefix
+
+If you place your server route in a subdirectory (e.g. `src/routes/api/[...slugs]/+server.ts`), set the `prefix` option on your Elysia server to match:
+
+```typescript
+// src/routes/api/[...slugs]/+server.ts
+import { Elysia, t } from 'elysia'
+
+const app = new Elysia({ prefix: '/api' })
+  .get('/', () => 'hi')
+  .post('/', ({ body }) => body, {
+    body: t.Object({
+      name: t.String()
+    })
+  })
+
+type RequestHandler = (v: { request: Request }) => Response | Promise<Response>
+
+export const fallback: RequestHandler = ({ request }) => app.handle(request)
+```
+
+## pnpm peer dependencies
+
+If you use pnpm, install peer dependencies manually:
+
+```bash
+pnpm add @sinclair/typebox openapi-types
+```
+
+<Note>
+  See [SvelteKit Routing](https://kit.svelte.dev/docs/routing#server) for further reference on SvelteKit server routes.
+</Note>

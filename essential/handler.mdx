@@ -1,0 +1,284 @@
+---
+title: "Request handlers: context, body, headers, and response"
+description: "Explore the handler context object: read body, params, query, headers, and cookies; set status and response headers; stream data; and return files."
+---
+
+A **handler** is a function that receives an HTTP request and returns a response. In Elysia, every route is backed by a handler — either a function you define or an inline literal value.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', () => 'hello world')  // function handler
+    .get('/static', 'Hello Elysia') // inline literal handler
+    .listen(3000)
+```
+
+Inline values are compiled ahead of time and are ideal for static resources. Elysia can optimise them without running the function on every request.
+
+## Context
+
+Every handler receives a single argument — the **context** — which carries all information about the current request. The context is unique per request; it is never shared between concurrent requests (except for `store`, the global mutable state).
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', (context) => context.path)
+    .listen(3000)
+```
+
+### Context properties
+
+| Property | Description |
+| -------- | ----------- |
+| `body` | HTTP message body: JSON, form data, or file upload |
+| `query` | Parsed query-string as a plain object |
+| `params` | Path parameters parsed as a plain object |
+| `headers` | Request headers as a plain object |
+| `cookie` | Mutable signal store for reading and writing cookies |
+| `store` | Global mutable state shared across all requests |
+| `request` | The raw [Web Standard `Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) |
+| `server` | Bun server instance (Bun only) |
+| `path` | Pathname of the request |
+
+### Utility functions
+
+| Function | Description |
+| -------- | ----------- |
+| `status(code, body?)` | Return a response with a specific HTTP status |
+| `redirect(url, status?)` | Redirect to another URL |
+| `set.headers` | Append or remove response headers |
+
+## Returning a status code
+
+Use the `status` function to return a response with a specific HTTP status code. This is the recommended approach because TypeScript can verify that the returned value matches your response schema.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ status }) => status(418, 'Kirifuji Nagisa'))
+    .listen(3000)
+```
+
+<Note>
+  Prefer `status()` over the legacy `set.status` assignment. The `status` function enables TypeScript to narrow the return type per status code, which unlocks end-to-end type safety with Eden.
+</Note>
+
+## set — mutating the response
+
+`set` is a mutable object on the context that controls the outgoing response.
+
+### set.headers
+
+Append or remove response headers before the response is sent.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ set }) => {
+        set.headers['x-powered-by'] = 'Elysia'
+
+        return 'a mimir'
+    })
+    .listen(3000)
+```
+
+<Tip>
+  Elysia auto-completes header names in lowercase for consistency. Use `set-cookie` rather than `Set-Cookie`.
+</Tip>
+
+Combining `set.headers` with `status`:
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ set, status }) => {
+        set.headers = { 'X-Teapot': 'true' }
+
+        return status(418, 'I am a teapot')
+    })
+    .listen(3000)
+```
+
+## Cookies
+
+Elysia exposes cookies as a mutable signal store. Read and write a cookie by accessing its name directly — no explicit get/set calls required.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/set', ({ cookie: { name } }) => {
+        // Read
+        const current = name.value
+
+        // Write
+        name.value = 'New Value'
+    })
+    .listen(3000)
+```
+
+## Redirect
+
+Redirect the client to another resource. When `redirect()` is returned, Elysia ignores any other returned value.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/', ({ redirect }) => {
+        return redirect('https://youtu.be/whpVWVWBW4U?&t=8')
+    })
+    .get('/custom-status', ({ redirect }) => {
+        return redirect('https://youtu.be/whpVWVWBW4U?&t=8', 302)
+    })
+    .listen(3000)
+```
+
+## File responses
+
+Return a single file using the `file` utility, or build a multipart form response with `form`.
+
+<CodeGroup>
+
+```typescript single file
+import { Elysia, file } from 'elysia'
+
+new Elysia()
+    .get('/', file('nagi.webp'))
+    .listen(3000)
+```
+
+```typescript multipart form
+import { Elysia, form, file } from 'elysia'
+
+new Elysia()
+    .get('/', () => form({
+        name: 'Tea Party',
+        images: [file('nagi.webp'), file('mika.webp')]
+    }))
+    .listen(3000)
+```
+
+</CodeGroup>
+
+## Streaming responses
+
+Return a streaming response by using a **generator function** with `yield`. Elysia automatically sets the appropriate transfer-encoding headers.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const app = new Elysia()
+    .get('/ok', function* () {
+        yield 1
+        yield 2
+        yield 3
+    })
+```
+
+If you return a value without ever yielding, Elysia downgrades the response to a normal (non-streamed) reply.
+
+```typescript
+import { Elysia } from 'elysia'
+
+const app = new Elysia()
+    .get('/ok', function* () {
+        if (Math.random() > 0.5) return 'ok'
+
+        yield 1
+        yield 2
+        yield 3
+    })
+```
+
+<Warning>
+  Headers can only be set **before** the first `yield`. Any `set.headers` mutations after the first chunk is sent are silently ignored because headers have already been flushed.
+</Warning>
+
+```typescript
+import { Elysia } from 'elysia'
+
+const app = new Elysia()
+    .get('/ok', function* ({ set }) {
+        set.headers['x-name'] = 'Elysia' // applied ✅
+        yield 1
+        yield 2
+
+        set.headers['x-id'] = '1' // ignored ❌
+        yield 3
+    })
+```
+
+### Server-Sent Events
+
+Wrap yielded values with `sse` to produce a proper `text/event-stream` response.
+
+```typescript
+import { Elysia, sse } from 'elysia'
+
+new Elysia()
+    .get('/sse', function* () {
+        yield sse('hello world')
+        yield sse({
+            event: 'message',
+            data: {
+                message: 'This is a message',
+                timestamp: new Date().toISOString()
+            },
+        })
+    })
+```
+
+### Consuming streams with Eden
+
+When using the [Eden treaty client](/eden/overview), a streaming route is exposed as an `AsyncGenerator` that you iterate with `for await`.
+
+```typescript
+import { Elysia } from 'elysia'
+import { treaty } from '@elysia/eden'
+
+const app = new Elysia()
+    .get('/ok', function* () {
+        yield 1
+        yield 2
+        yield 3
+    })
+
+const { data, error } = await treaty(app).ok.get()
+if (error) throw error
+
+for await (const chunk of data)
+    console.log(chunk)
+```
+
+## Low-level request access
+
+The raw Web Standard `Request` is available on the context for cases where you need headers, body streams, or other low-level details not exposed by Elysia's helpers.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/user-agent', ({ request }) => {
+        return request.headers.get('user-agent')
+    })
+    .listen(3000)
+```
+
+## Server instance (Bun only)
+
+The Bun server instance is available on the context after `.listen()` is called.
+
+```typescript
+import { Elysia } from 'elysia'
+
+new Elysia()
+    .get('/port', ({ server }) => server?.port)
+    .get('/ip', ({ server, request }) => server?.requestIP(request))
+    .listen(3000)
+```

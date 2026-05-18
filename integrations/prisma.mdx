@@ -1,0 +1,122 @@
+---
+title: "Prisma ORM with Elysia: schema-first data access"
+description: "Generate Elysia validation models directly from your Prisma schema using Prismabox for type-safe request handling and OpenAPI docs."
+---
+
+[Prisma](https://prisma.io) is a schema-first ORM that generates TypeScript types from your database schema. You can pair it with [Prismabox](https://github.com/m1212e/prismabox) to automatically generate Elysia-compatible TypeBox validation models from those same Prisma models, creating end-to-end type safety from database to API to frontend.
+
+```
+                                                * ——————————————— *
+                                                |                 |
+                                           | -> |  Documentation  |
+* ————————— *             * ———————— * OpenAPI |                 |
+|           |  prismabox  |          | ——————— * ——————————————— *
+|  Prisma   | —————————-> |  Elysia  |
+|           |             |          | ——————— * ——————————————— *
+* ————————— *             * ———————— *   Eden  |                 |
+                                           | -> |  Frontend Code  |
+                                               |                 |
+                                               * ——————————————— *
+```
+
+<Steps>
+  <Step title="Install Prisma and Prismabox">
+    ```bash
+    bun add @prisma/client prismabox prisma-adapter-bun-sqlite && \
+    bun add -d prisma
+    ```
+  </Step>
+
+  <Step title="Add the Prismabox generator to your Prisma schema">
+    Edit `prisma/schema.prisma` to add a `prismabox` generator block:
+
+    ```prisma
+    generator client {
+      provider = "prisma-client"
+      output   = "../generated/prisma"
+    }
+
+    datasource db {
+      provider = "sqlite"
+    }
+
+    generator prismabox {
+      provider                    = "prismabox"
+      typeboxImportDependencyName = "elysia"
+      typeboxImportVariableName   = "t"
+      inputModel                  = true
+      output                      = "../generated/prismabox"
+    }
+
+    model User {
+      id    String  @id @default(cuid())
+      email String  @unique
+      name  String?
+      posts Post[]
+    }
+
+    model Post {
+      id        String  @id @default(cuid())
+      title     String
+      content   String?
+      published Boolean @default(false)
+      author    User    @relation(fields: [authorId], references: [id])
+      authorId  String
+    }
+    ```
+  </Step>
+
+  <Step title="Run the Prisma generator">
+    ```bash
+    bunx prisma generate
+    ```
+
+    Prismabox will create one file per model in `generated/prismabox/`:
+    - `User.ts` for the `User` model
+    - `Post.ts` for the `Post` model
+  </Step>
+
+  <Step title="Use the generated models in your Elysia app">
+    Import and use the generated validation models for both request body and response validation:
+
+    ```typescript
+    // src/index.ts
+    import { Elysia, t } from 'elysia'
+    import { PrismaBunSqlite } from 'prisma-adapter-bun-sqlite'
+    import { PrismaClient } from '../generated/prisma/client'
+    import { UserPlain, UserPlainInputCreate } from '../generated/prismabox/User'
+
+    const adapter = new PrismaBunSqlite({ url: process.env.DATABASE_URL })
+    export const prisma = new PrismaClient({ adapter })
+
+    const app = new Elysia()
+      .put(
+        '/',
+        async ({ body }) => prisma.user.create({ data: body }),
+        {
+          body: UserPlainInputCreate,
+          response: UserPlain
+        }
+      )
+      .get(
+        '/id/:id',
+        async ({ params: { id }, status }) => {
+          const user = await prisma.user.findUnique({ where: { id } })
+          if (!user) return status(404, 'User not found')
+          return user
+        },
+        {
+          response: {
+            200: UserPlain,
+            404: t.String()
+          }
+        }
+      )
+      .listen(3000)
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  For more information, refer to the [Prisma documentation](https://prisma.io) and the [Prismabox documentation](https://github.com/m1212e/prismabox).
+</Note>
